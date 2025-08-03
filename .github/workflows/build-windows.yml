@@ -1,0 +1,58 @@
+# 工作流的名称
+name: Build Windows Executable
+
+# 触发条件：
+# 1. 当代码被推送到 main 分支时
+# 2. 当你创建一个新的 "Tag" (用于发布新版本)
+# 3. 允许你在GitHub页面手动触发
+on:
+  push:
+    branches: [ "main" ]
+  release:
+    types: [ created ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # 指定运行环境为最新的Windows服务器
+    runs-on: windows-latest
+
+    steps:
+    # 第1步：检出你的代码
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 第2步：设置Python环境
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' # 你可以根据需要更改Python版本
+
+    # 第3步：安装依赖包
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    # 第4步：使用PyInstaller打包
+    # --noconsole: 这是一个GUI应用，不显示控制台窗口
+    # --onefile: 打包成单个.exe文件
+    # --add-data: 将 config.json 文件包含到exe中
+    # --name: 指定生成的可执行文件名
+    - name: Build with PyInstaller
+      run: pyinstaller --noconsole --onefile --name "AI-Essay-Corrector" --add-data "config.json;." main.py
+
+    # 第5步：将打包好的.exe上传，以便在工作流页面下载 (适合测试)
+    - name: Upload artifact for testing
+      uses: actions/upload-artifact@v4
+      with:
+        name: AI-Essay-Corrector-Windows-exe
+        path: dist/AI-Essay-Corrector.exe
+
+    # 第6步 (专业级开源发布): 当你创建Tag时，自动创建Release并附上.exe
+    - name: Create Release and Upload Asset
+      if: startsWith(github.ref, 'refs/tags/') # 仅在创建Tag时运行此步骤
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/AI-Essay-Corrector.exe
