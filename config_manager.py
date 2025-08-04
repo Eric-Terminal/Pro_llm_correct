@@ -2,7 +2,7 @@ import json
 import os
 import base64
 import hashlib
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 from cryptography.fernet import Fernet, InvalidToken
 
 class ConfigManager:
@@ -17,7 +17,7 @@ class ConfigManager:
 
     def __init__(self, file_path: str = "config.json"):
         self.file_path = file_path
-        self.config: Dict[str, str] = {}
+        self.config: Dict[str, Any] = {}
         self._fernet: Optional[Fernet] = None
         self._initialize_encryption()
         self.load()
@@ -70,22 +70,29 @@ class ConfigManager:
         except IOError as e:
             print(f"保存配置失败: {e}")
 
-    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+    def get(self, key: str, default: Optional[Any] = None) -> Optional[Any]:
         """获取指定键的配置值。如果键属于敏感信息，则自动解密后返回。"""
         value = self.config.get(key)
         if value is None:
             return default
         
         if key in self.SENSITIVE_KEYS:
-            return self._decrypt(value)
+            return self._decrypt(str(value))
         return value
 
-    def set(self, key: str, value: str):
+    def set(self, key: str, value: Any):
         """设置指定键的配置值。如果键属于敏感信息，则自动加密后存储。"""
         if key in self.SENSITIVE_KEYS:
-            self.config[key] = self._encrypt(value)
+            self.config[key] = self._encrypt(str(value))
         else:
             self.config[key] = value
+
+    def update_token_usage(self, vlm_input: int, vlm_output: int, llm_input: int, llm_output: int):
+        """累加本次API调用的token使用量到配置中。"""
+        self.config['UsageVlmInput'] = self.get('UsageVlmInput', 0) + vlm_input
+        self.config['UsageVlmOutput'] = self.get('UsageVlmOutput', 0) + vlm_output
+        self.config['UsageLlmInput'] = self.get('UsageLlmInput', 0) + llm_input
+        self.config['UsageLlmOutput'] = self.get('UsageLlmOutput', 0) + llm_output
 
     def check_settings(self) -> Tuple[bool, Optional[str]]:
         """

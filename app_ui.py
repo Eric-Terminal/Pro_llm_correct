@@ -10,7 +10,7 @@ from api_services import ApiService, DEFAULT_LLM_PROMPT_TEMPLATE
 
 class AboutDialog(tk.Toplevel):
     """“关于”对话框，展示应用信息，支持滚动查看。"""
-    def __init__(self, parent):
+    def __init__(self, parent, config_manager: ConfigManager):
         super().__init__(parent)
         self.transient(parent)
         self.title("关于 AI 作文批改助手")
@@ -32,7 +32,12 @@ class AboutDialog(tk.Toplevel):
         scrollbar.grid(row=0, column=1, sticky="ns")
         text_widget.config(yscrollcommand=scrollbar.set)
 
-        about_text = """
+        vlm_in = config_manager.get('UsageVlmInput', 0)
+        vlm_out = config_manager.get('UsageVlmOutput', 0)
+        llm_in = config_manager.get('UsageLlmInput', 0)
+        llm_out = config_manager.get('UsageLlmOutput', 0)
+
+        about_text = f"""
 欢迎使用 AI 作文批改助手！这是一款专为教育者和学生设计的智能工具，旨在利用前沿的人工智能技术，提供高效、精准、个性化的英文作文批改体验。
 
 核心亮点:
@@ -59,6 +64,13 @@ class AboutDialog(tk.Toplevel):
 作者: Eric_Terminal
 https://github.com/Eric-Terminal
 版本: 2.5
+
+---
+历史Token使用量 (仅供参考):
+- VLM 输入: {vlm_in:,}
+- VLM 输出: {vlm_out:,}
+- LLM 输入: {llm_in:,}
+- LLM 输出: {llm_out:,}
 """
         
         text_widget.insert("1.0", about_text)
@@ -166,8 +178,13 @@ class SettingsDialog(tk.Toplevel):
             "LlmModel": self.llm_model.get(),
             "SensitivityFactor": self.sensitivity_factor.get(),
             "MaxWorkers": self.max_workers.get(),
-            "LlmPromptTemplate": self.llm_prompt_text.get("1.0", "end-1c") # 从Text控件获取用户修改后的Prompt模板
+            "LlmPromptTemplate": self.llm_prompt_text.get("1.0", "end-1c")
         }
+
+        # 如果用户修改后的模板与默认模板内容一致，则不写入配置文件，以使用默认值
+        if self.result["LlmPromptTemplate"].strip() == DEFAULT_LLM_PROMPT_TEMPLATE.strip():
+            self.result["LlmPromptTemplate"] = None  # 使用 None 作为信号，表示应移除此配置项
+
         self.destroy()
 
     def on_close(self):
@@ -295,12 +312,19 @@ class MainApp:
             self.config_manager.config.pop("OcrApiKey", None)
             self.config_manager.config.pop("OcrSecretKey", None)
             for key, value in dialog.result.items():
-                self.config_manager.set(key, value)
+                if key == "LlmPromptTemplate":
+                    if value is None:
+                        # 如果值为None，表示用户希望恢复默认模板，因此从配置中移除该键
+                        self.config_manager.config.pop(key, None)
+                    else:
+                        self.config_manager.set(key, value)
+                else:
+                    self.config_manager.set(key, value)
             self.config_manager.save()
 
     def _open_about_dialog(self):
         """创建并显示“关于”对话框。"""
-        AboutDialog(self.root)
+        AboutDialog(self.root, self.config_manager)
 
     def _open_file_dialog(self):
         """打开文件选择对话框，让用户选择一个或多个图片文件。"""
@@ -372,13 +396,25 @@ class MainApp:
         base_name = os.path.basename(file_path)
         self.ui_queue.put(("log", f"开始处理: {base_name}"))
         try:
-            final_report = self.api_service.process_essay_image(file_path, topic)
+            final_report, vlm_usage, llm_usage = self.api_service.process_essay_image(file_path, topic)
             
             report_filename = os.path.splitext(file_path)[0] + "_report.md"
             with open(report_filename, 'w', encoding='utf-8') as f:
                 f.write(final_report)
             
+            vlm_in = vlm_usage.get("prompt_tokens", 0)
+            vlm_out = vlm_usage.get("completion_tokens", 0)
+            llm_in = llm_usage.get("prompt_tokens", 0)
+            llm_out = llm_usage.get("completion_tokens", 0)
+
+            usage_log = f"Token用量: VLM(in:{vlm_in}, out:{vlm_out}), LLM(in:{llm_in}, out:{llm_out})"
             self.ui_queue.put(("log", f"完成批改: {base_name} -> {os.path.basename(report_filename)}"))
+            self.ui_queue.put(("log", usage_log))
+
+            # 加锁以保证线程安全地更新和保存配置
+            with self.lock:
+                self.config_manager.update_token_usage(vlm_in, vlm_out, llm_in, llm_out)
+                self.config_manager.save()
 
         except Exception as e:
             self.ui_queue.put(("log", f"文件: {base_name} 失败: {e}"))
