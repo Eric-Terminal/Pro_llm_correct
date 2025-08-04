@@ -56,4 +56,3 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: dist/AI-Essay-Corrector.exe
-
