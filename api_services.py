@@ -1,5 +1,5 @@
 import base64
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 from config_manager import ConfigManager
 import os
 import mimetypes
@@ -12,18 +12,45 @@ DEFAULT_LLM_PROMPT_TEMPLATE = """# ESSAY TOPIC
 
 # INSTRUCTIONS FOR AI (Process in English)
 ## 1. ROLE & GOAL
-You are a highly experienced senior high school English teacher. Your task is to provide a detailed, constructive, and encouraging evaluation of a student's essay.
+You are a highly experienced senior high school English teacher specializing in the Chinese National College Entrance Examination (Gaokao). Your goal is to provide a detailed, constructive, and encouraging evaluation of a student's essay, correctly identifying the essay type and applying the appropriate scoring standard.
+
 ## 2. INPUT DATA
-You will receive a quantitative `<wscore>` and the full `<text>` of the essay. The essay is based on the topic provided above.
-## 3. GRADING LOGIC (Total Score: 15 points)
-- **Content & Language (12 points):** Evaluate this based on grammar, vocabulary, sentence structure, etc., in relation to the essay topic.
-- **Handwriting & Presentation (3 points):** Calculate the score by first getting a raw score (`Raw Score = wscore * 3`), and then rounding the `Raw Score` **up** to the nearest half-point (0.5).
-    - *Rounding Logic Example:* A raw score of 2.49 becomes 2.5. A raw score of 2.51 becomes 3.0. A raw score of 2.50 remains 2.5. A score of 0 remains 0.
-## 4. FINAL TASK
-Analyze the text, calculate scores, and present your feedback in **Simplified Chinese** using the precise Markdown format specified below.
+You will receive three pieces of data:
+- `<topic>`: For "Application Writing", this is the essay prompt. For "Read and Continue Writing", this is the initial story provided to the student.
+- `<wscore>`: A quantitative handwriting quality score from 0.0 to 1.0.
+- `<text>`: The full text of the student's handwritten essay.
+
+## 3. STEP 1: IDENTIFY ESSAY TYPE
+First, you MUST determine which of the two following Gaokao essay types this is. This decision will change the total score.
+*   **TYPE A: Application Writing (应用文)**
+    *   **Clues:** The total word count of the student's `<text>` is shorter, typically around 80-100 words. The `<topic>` is a straightforward instruction (e.g., "Write a letter to...").
+    *   **Total Score:** 15 points.
+*   **TYPE B: Read and Continue Writing (读后续写)**
+    *   **Clues:** The total word count of the student's `<text>` is longer, typically around 150 words. The `<topic>` contains a substantial story. The student's `<text>` will consist of two distinct paragraphs, and the beginning of each paragraph will match the starting sentences provided in the original exam prompt.
+    *   **Total Score:** 25 points.
+
+## 4. STEP 2: APPLY SCORING LOGIC
+Based on the identified essay type, apply the corresponding grading logic. The Handwriting score calculation is the same for both.
+*   **Handwriting & Presentation Score (通用卷面分计算):**
+    *   This sub-score is always out of **3 points**.
+    *   **Calculation:** Get a raw score (`Raw Score = wscore * 3`). Then, round the `Raw Score` **up** to the nearest half-point (0.5).
+    *   **Rounding Example:** A raw score of 2.49 becomes 2.5. A raw score of 2.51 becomes 3.0. A score of 2.50 remains 2.5.
+
+*   **GRADING FOR TYPE A: Application Writing (Total 15)**
+    *   **Content & Language (12 points):** Evaluate grammar, vocabulary, sentence structure, and relevance to the topic.
+    *   **Handwriting & Presentation (3 points):** Use the calculation described above.
+    *   **Final Score:** (Content & Language Score) + (Handwriting Score) out of 15.
+
+*   **GRADING FOR TYPE B: Read and Continue Writing (Total 25)**
+    *   **Content & Language (22 points):** Evaluate the quality of the continuation. Key criteria include: coherence with the original story, logical plot development, character consistency, richness of detail, and advanced use of grammar, vocabulary, and sentence structures.
+    *   **Handwriting & Presentation (3 points):** Use the calculation described above.
+    *   **Final Score:** (Content & Language Score) + (Handwriting Score) out of 25.
+
+## 5. FINAL TASK
+Analyze the text, identify the essay type, calculate the scores, and present your complete feedback in **Simplified Chinese** using the precise Markdown format specified in the "OUTPUT SPECIFICATION" section. Ensure the final score correctly reflects the total points possible (15 or 25).
 #--- End of English Instructions ---
 # OUTPUT SPECIFICATION (MUST BE IN SIMPLIFIED CHINESE)
-# 请严格使用以下Markdown格式，并用简体中文填充所有内容，优点可以两个到三个，问题建议要把全部问题找出来并且解析，都要遵循类似格式。
+# 请严格使用以下Markdown格式，并用简体中文填充所有内容，优点找不到不要硬找，问题建议要把全部问题找出来并且解析，都要遵循类似格式。
 
 
 ###【作文内容】
@@ -76,11 +103,12 @@ class ApiService:
             encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
         return f"data:{mime_type};base64,{encoded_string}"
 
-    def process_essay_image(self, file_path: str, topic: str) -> str:
+    def process_essay_image(self, file_path: str, topic: str) -> Tuple[str, Dict[str, int], Dict[str, int]]:
         """
         执行完整的两步式作文批改流程：
         1. VLM调用：分析作文图片，提取手写文本和书写质量分数。
         2. LLM调用：基于VLM的输出和作文题目，生成详细的批改报告。
+        返回: (批改报告, VLM token使用情况, LLM token使用情况)
         """
         # --- 步骤 1: 调用VLM进行图像分析 ---
         vlm_client = OpenAI(
@@ -115,9 +143,14 @@ Strictly adhere to the following format. Do not output anything else.
 </text>"""
         vlm_messages = [{"role": "user", "content": [{"type": "text", "text": vlm_prompt}, {"type": "image_url", "image_url": {"url": base64_image_url}}]}]
         
-        vlm_model = self.config.get("VlmModel", "gemini-2.5-pro")
+        vlm_model = self.config.get("VlmModel", "Pro/THUDM/GLM-4.1V-9B-Thinking")
         vlm_response = vlm_client.chat.completions.create(model=vlm_model, messages=vlm_messages, max_tokens=4096, temperature=1)
         vlm_output = vlm_response.choices[0].message.content or ""
+        
+        vlm_usage = {
+            "prompt_tokens": vlm_response.usage.prompt_tokens if vlm_response.usage else 0,
+            "completion_tokens": vlm_response.usage.completion_tokens if vlm_response.usage else 0,
+        }
         
         # 解析VLM返回的XML格式输出，提取分数和文本
         wscore_match = re.search(r'<wscore>(.*?)</wscore>', vlm_output, re.DOTALL)
@@ -156,8 +189,13 @@ Strictly adhere to the following format. Do not output anything else.
         
         llm_messages = [{"role": "user", "content": final_llm_prompt}]
 
-        llm_model = self.config.get("LlmModel", "gemini-2.5-pro")
+        llm_model = self.config.get("LlmModel", "moonshotai/Kimi-K2-Instruct")
         llm_response = llm_client.chat.completions.create(model=llm_model, messages=llm_messages, temperature=1, max_tokens=16384)
         final_report = llm_response.choices[0].message.content or "错误：AI未能生成报告。"
 
-        return final_report
+        llm_usage = {
+            "prompt_tokens": llm_response.usage.prompt_tokens if llm_response.usage else 0,
+            "completion_tokens": llm_response.usage.completion_tokens if llm_response.usage else 0,
+        }
+
+        return final_report, vlm_usage, llm_usage
