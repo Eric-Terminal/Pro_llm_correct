@@ -58,7 +58,7 @@ class AboutDialog(tk.Toplevel):
 
 作者: Eric_Terminal
 https://github.com/Eric-Terminal
-版本: 2.4
+版本: 2.5
 """
         
         text_widget.insert("1.0", about_text)
@@ -85,12 +85,12 @@ class SettingsDialog(tk.Toplevel):
         self.result = None
 
         # 为VLM和LLM服务分别创建Tkinter字符串变量
-        self.vlm_url = tk.StringVar(value=current_config.get("VlmUrl", ""))
+        self.vlm_url = tk.StringVar(value=current_config.get("VlmUrl", "https://api.siliconflow.cn/v1/"))
         self.vlm_api_key = tk.StringVar(value=current_config.get("VlmApiKey", ""))
-        self.vlm_model = tk.StringVar(value=current_config.get("VlmModel", "gemini-2.5-pro"))
-        self.llm_url = tk.StringVar(value=current_config.get("LlmUrl", ""))
+        self.vlm_model = tk.StringVar(value=current_config.get("VlmModel", "Pro/THUDM/GLM-4.1V-9B-Thinking"))
+        self.llm_url = tk.StringVar(value=current_config.get("LlmUrl", "https://api.siliconflow.cn/v1/"))
         self.llm_api_key = tk.StringVar(value=current_config.get("LlmApiKey", ""))
-        self.llm_model = tk.StringVar(value=current_config.get("LlmModel", "gemini-2.5-pro"))
+        self.llm_model = tk.StringVar(value=current_config.get("LlmModel", "moonshotai/Kimi-K2-Instruct"))
         self.sensitivity_factor = tk.StringVar(value=current_config.get("SensitivityFactor", "1.5"))
         self.max_workers = tk.StringVar(value=current_config.get("MaxWorkers", "4"))
         
