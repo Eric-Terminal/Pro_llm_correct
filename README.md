@@ -5,10 +5,10 @@
 这是一款用爱发电的桌面小工具，它能像一位经验丰富的英语老师一样，帮你自动批改手写的英文作文图片，并生成超级详细的批改报告哟～
 
 ### ☆ 应用界面预览 ☆
-![alt text](f8993cd47bdde97ff9cc610d247b2df4.png)
-![alt text](14316bd1f17ec7815ffca1598bbd7054.png)
-![alt text](0bb376edb9675b0785313d573ca7f376.png)
-![alt text](37d535e90bee96e74e240fc4e65e27ee.png)
+![alt text](photo/1.png)
+![alt text](photo/2.png)
+![alt text](photo/3.png)
+![alt text](photo/4.png)
 ---
 
 ## ☆ 亮点闪闪 (Features) ☆
