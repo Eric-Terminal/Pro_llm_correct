@@ -17,6 +17,9 @@ jobs:
     # 指定运行环境为最新的Windows服务器
     runs-on: windows-latest
 
+    permissions:
+      contents: write
+
     steps:
     # 第1步：检出你的代码
     - name: Checkout repository

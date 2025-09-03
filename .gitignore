@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.json
 
 # PyInstaller build artifacts
 dist/
