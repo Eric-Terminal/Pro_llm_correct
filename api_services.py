@@ -1,10 +1,13 @@
 import base64
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from config_manager import ConfigManager
+from markdown_renderer import create_markdown_renderer
 import os
 import mimetypes
 import re
 from openai import OpenAI
+import time
+import logging
 
 # 定义默认的LLM Prompt模板。使用`.format()`方法进行后续的动态填充。
 DEFAULT_LLM_PROMPT_TEMPLATE = """# ESSAY TOPIC
@@ -50,13 +53,13 @@ Based on the identified essay type, apply the corresponding grading logic. The H
 Analyze the text, identify the essay type, calculate the scores, and present your complete feedback in **Simplified Chinese** using the precise Markdown format specified in the "OUTPUT SPECIFICATION" section. Ensure the final score correctly reflects the total points possible (15 or 25).
 #--- End of English Instructions ---
 # OUTPUT SPECIFICATION (MUST BE IN SIMPLIFIED CHINESE)
-# 请严格使用以下Markdown格式，并用简体中文填充所有内容，优点找不到不要硬找，问题建议要把全部问题找出来并且解析，都要遵循类似格式。
+# 请使用以下Markdown格式，并用简体中文填充所有内容，优点找不到不要硬找，问题建议要把全部问题找出来并且解析，都要遵循类似格式。对于分数的总分则必须由你选择是15分还是25分(不一定是下面的15分)。
 
 
 ###【作文内容】
 *   **作文文本:** [在此处粘贴完整的作文文本。]
 ### 【综合评价】
-(在此处用一两句鼓励性的话，对本次作文进行总体概述。)
+(在此处用一两句鼓励性的话，对本次作文进行总体概述。如果写的太烂了也可以骂人)
 ### 【亮点与优点】
 *   **(优点1):** [具体描述作文内容或语言上的一个亮点。]
 *   **(优点2):** [具体描述另一个优点。]
@@ -89,8 +92,15 @@ Analyze the text, identify the essay type, calculate the scores, and present you
 
 class ApiService:
     """封装了与外部API（VLM和LLM）交互的所有逻辑。"""
-    def __init__(self, config_manager: ConfigManager):
+    def __init__(self, config_manager: ConfigManager, ui_queue: Optional[Any] = None):
         self.config = config_manager
+        self.ui_queue = ui_queue
+        self.markdown_renderer = create_markdown_renderer(config_manager)
+
+    def _log(self, message: str):
+        """将日志消息放入UI队列。"""
+        if self.ui_queue:
+            self.ui_queue.put(("log", message))
 
     def _encode_image_to_base64_url(self, image_path: str) -> str:
         """将本地图片文件编码为Base64数据URL。"""
@@ -111,10 +121,25 @@ class ApiService:
         返回: (批改报告, VLM token使用情况, LLM token使用情况)
         """
         # --- 步骤 1: 调用VLM进行图像分析 ---
-        vlm_client = OpenAI(
-            api_key=self.config.get("VlmApiKey"),
-            base_url=self.config.get("VlmUrl")
-        )
+        try:
+            max_retries = int(self.config.get("MaxRetries", 3))
+            retry_delay = int(self.config.get("RetryDelay", 5))
+        except (ValueError, TypeError):
+            max_retries = 3
+            retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                vlm_client = OpenAI(
+                    api_key=self.config.get("VlmApiKey"),
+                    base_url=self.config.get("VlmUrl")
+                )
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                self._log(f"VLM客户端创建失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
         base64_image_url = self._encode_image_to_base64_url(file_path)
 
         vlm_prompt = """# ROLE
@@ -144,8 +169,16 @@ Strictly adhere to the following format. Do not output anything else.
         vlm_messages = [{"role": "user", "content": [{"type": "text", "text": vlm_prompt}, {"type": "image_url", "image_url": {"url": base64_image_url}}]}]
         
         vlm_model = self.config.get("VlmModel", "Pro/THUDM/GLM-4.1V-9B-Thinking")
-        vlm_response = vlm_client.chat.completions.create(model=vlm_model, messages=vlm_messages, max_tokens=4096, temperature=1)
-        vlm_output = vlm_response.choices[0].message.content or ""
+        for attempt in range(max_retries):
+            try:
+                vlm_response = vlm_client.chat.completions.create(model=vlm_model, messages=vlm_messages, max_tokens=4096, temperature=1)
+                vlm_output = vlm_response.choices[0].message.content or ""
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                self._log(f"VLM调用失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
         
         vlm_usage = {
             "prompt_tokens": vlm_response.usage.prompt_tokens if vlm_response.usage else 0,
@@ -170,10 +203,18 @@ Strictly adhere to the following format. Do not output anything else.
             raise ValueError(f"VLM未能按预期格式返回，无法解析文本。模型返回：\n{vlm_output}")
 
         # --- 步骤 2: 调用LLM生成批改报告 ---
-        llm_client = OpenAI(
-            api_key=self.config.get("LlmApiKey"),
-            base_url=self.config.get("LlmUrl")
-        )
+        for attempt in range(max_retries):
+            try:
+                llm_client = OpenAI(
+                    api_key=self.config.get("LlmApiKey"),
+                    base_url=self.config.get("LlmUrl")
+                )
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                self._log(f"LLM客户端创建失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
         
         # 从配置加载Prompt模板，若用户未定义则使用默认模板
         prompt_template = self.config.get("LlmPromptTemplate")
@@ -190,12 +231,32 @@ Strictly adhere to the following format. Do not output anything else.
         llm_messages = [{"role": "user", "content": final_llm_prompt}]
 
         llm_model = self.config.get("LlmModel", "moonshotai/Kimi-K2-Instruct")
-        llm_response = llm_client.chat.completions.create(model=llm_model, messages=llm_messages, temperature=1, max_tokens=16384)
-        final_report = llm_response.choices[0].message.content or "错误：AI未能生成报告。"
+        for attempt in range(max_retries):
+            try:
+                llm_response = llm_client.chat.completions.create(model=llm_model, messages=llm_messages, temperature=1, max_tokens=16384)
+                final_report = llm_response.choices[0].message.content or "错误：AI未能生成报告。"
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    final_report = f"错误：AI生成报告失败（达到最大重试次数 {max_retries} 次）"
+                else:
+                    self._log(f"LLM调用失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
 
         llm_usage = {
             "prompt_tokens": llm_response.usage.prompt_tokens if llm_response.usage else 0,
             "completion_tokens": llm_response.usage.completion_tokens if llm_response.usage else 0,
         }
 
-        return final_report, vlm_usage, llm_usage
+        # 渲染Markdown为HTML（如果配置开启）
+        html_path = None
+        if self.markdown_renderer:
+            # 定义HTML报告的文件名
+            report_base_name = os.path.splitext(file_path)[0]
+            html_output_path = f"{report_base_name}_report.html"
+            
+            html_path = self.markdown_renderer.render_markdown_to_html_file(final_report, html_output_path)
+            if html_path:
+                self._log(f"已生成HTML报告: {os.path.basename(html_path)}")
+        
+        return final_report, vlm_usage, llm_usage, html_path

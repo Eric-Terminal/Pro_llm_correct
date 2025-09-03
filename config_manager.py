@@ -21,6 +21,8 @@ class ConfigManager:
         self._fernet: Optional[Fernet] = None
         self._initialize_encryption()
         self.load()
+        # 确保默认渲染设置存在
+        self._ensure_default_render_settings()
 
     def _initialize_encryption(self):
         """使用预设的密码和盐生成加密密钥，并初始化Fernet加密/解密实例。"""
@@ -33,6 +35,17 @@ class ConfigManager:
         if not value or not self._fernet:
             return ""
         return self._fernet.encrypt(value.encode('utf-8')).decode('utf-8')
+
+    def _ensure_default_render_settings(self):
+        """确保渲染相关的默认设置存在"""
+        if self.get("RenderMarkdownToImage") is None:
+            self.set("RenderMarkdownToImage", True)  # 默认开启渲染功能
+        if self.get("RenderImageFormat") is None:
+            self.set("RenderImageFormat", "png")  # 默认PNG格式
+        if self.get("RenderImageWidth") is None:
+            self.set("RenderImageWidth", 800)  # 默认图片宽度
+        if self.get("RenderImageQuality") is None:
+            self.set("RenderImageQuality", 90)  # 默认图片质量
 
     def _decrypt(self, encrypted_value: str) -> str:
         """
@@ -106,6 +119,8 @@ class ConfigManager:
             "LlmUrl": "LLM服务地址",
             "LlmApiKey": "LLM服务密钥",
             "LlmModel": "LLM模型名称",
+            "MaxRetries": "最大重试次数",
+            "RetryDelay": "重试延迟时间(秒)",
         }
         for key, name in required_settings.items():
             # 使用self.get()来确保我们检查的是解密后的值

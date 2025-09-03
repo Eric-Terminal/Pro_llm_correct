@@ -5,8 +5,12 @@ import queue
 import os
 from typing import List
 import concurrent.futures
+import logging
 from config_manager import ConfigManager
 from api_services import ApiService, DEFAULT_LLM_PROMPT_TEMPLATE
+
+# 配置日志记录器
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class AboutDialog(tk.Toplevel):
     """“关于”对话框，展示应用信息，支持滚动查看。"""
@@ -62,8 +66,8 @@ class AboutDialog(tk.Toplevel):
 5. **获取报告:** 任务完成后，每一张图片对应的Markdown格式详细批改报告，都会自动生成在原图片所在的目录下。
 
 作者: Eric_Terminal
-https://github.com/Eric-Terminal
-版本: 2.5
+https://github.com/Eric-Terminal/Pro_llm_correct
+版本: 3.0
 
 ---
 历史Token使用量 (仅供参考):
@@ -105,6 +109,9 @@ class SettingsDialog(tk.Toplevel):
         self.llm_model = tk.StringVar(value=current_config.get("LlmModel", "moonshotai/Kimi-K2-Instruct"))
         self.sensitivity_factor = tk.StringVar(value=current_config.get("SensitivityFactor", "1.5"))
         self.max_workers = tk.StringVar(value=current_config.get("MaxWorkers", "4"))
+        self.max_retries = tk.StringVar(value=current_config.get("MaxRetries", "3"))
+        self.retry_delay = tk.StringVar(value=current_config.get("RetryDelay", "5"))
+        self.render_markdown = tk.BooleanVar(value=current_config.get("RenderMarkdown", True))
         
         # 智能加载Prompt模板：优先使用用户自定义模板，否则使用默认模板
         user_template = current_config.get("LlmPromptTemplate")
@@ -145,6 +152,12 @@ class SettingsDialog(tk.Toplevel):
         ttk.Entry(other_frame, textvariable=self.sensitivity_factor, width=40).grid(column=1, row=0, sticky=(tk.W, tk.E))
         ttk.Label(other_frame, text="最大并发数:").grid(column=0, row=1, sticky=tk.W, pady=2)
         ttk.Entry(other_frame, textvariable=self.max_workers, width=40).grid(column=1, row=1, sticky=(tk.W, tk.E))
+        ttk.Label(other_frame, text="最大重试次数:").grid(column=0, row=2, sticky=tk.W, pady=2)
+        ttk.Entry(other_frame, textvariable=self.max_retries, width=40).grid(column=1, row=2, sticky=(tk.W, tk.E))
+        ttk.Label(other_frame, text="重试延迟(秒):").grid(column=0, row=3, sticky=tk.W, pady=2)
+        ttk.Entry(other_frame, textvariable=self.retry_delay, width=40).grid(column=1, row=3, sticky=(tk.W, tk.E))
+        ttk.Label(other_frame, text="渲染Markdown报告:").grid(column=0, row=4, sticky=tk.W, pady=2)
+        ttk.Checkbutton(other_frame, variable=self.render_markdown).grid(column=1, row=4, sticky=tk.W)
         
         # LLM Prompt模板编辑区域
         prompt_frame = ttk.LabelFrame(frame, text="LLM Prompt 模板 (可在此修改，请勿修改{}占位符内容导致程序参数无法正常传递，通常情况下修改总分即可)", padding="10")
@@ -178,6 +191,7 @@ class SettingsDialog(tk.Toplevel):
             "LlmModel": self.llm_model.get(),
             "SensitivityFactor": self.sensitivity_factor.get(),
             "MaxWorkers": self.max_workers.get(),
+            "RenderMarkdown": self.render_markdown.get(),
             "LlmPromptTemplate": self.llm_prompt_text.get("1.0", "end-1c")
         }
 
@@ -194,18 +208,18 @@ class SettingsDialog(tk.Toplevel):
 
 class MainApp:
     """应用主窗口类，负责构建UI界面、处理用户交互和协调后台服务。"""
-    def __init__(self, root: tk.Tk, config_manager: ConfigManager, api_service: ApiService):
+    def __init__(self, root: tk.Tk, config_manager: ConfigManager):
         self.root = root
         self.config_manager = config_manager
-        self.api_service = api_service
+        self.ui_queue = queue.Queue()
+        self.api_service = ApiService(config_manager, self.ui_queue)
         
         self.file_paths: List[str] = []
         self.is_file_selected = False
-        self.ui_queue = queue.Queue()
         self.topic_input = None
         self.processed_count = 0
         self.lock = threading.Lock()
-
+        
         self._setup_ui()
         self._initialize_config()
         self.root.after(100, self._process_ui_queue)
@@ -380,7 +394,8 @@ class MainApp:
     def _concurrent_worker_manager(self, file_paths: List[str], topic: str):
         """使用线程池并发处理所有选定的文件。"""
         try:
-            max_workers = int(self.config_manager.get("MaxWorkers", "4"))
+            # 强制将从配置中读取的值转换为整数，提供默认值以防万一
+            max_workers = int(self.config_manager.get("MaxWorkers", 4))
         except (ValueError, TypeError):
             max_workers = 4
 
@@ -396,10 +411,11 @@ class MainApp:
         base_name = os.path.basename(file_path)
         self.ui_queue.put(("log", f"开始处理: {base_name}"))
         try:
-            final_report, vlm_usage, llm_usage = self.api_service.process_essay_image(file_path, topic)
+            final_report, vlm_usage, llm_usage, html_path = self.api_service.process_essay_image(file_path, topic)
             
-            report_filename = os.path.splitext(file_path)[0] + "_report.md"
-            with open(report_filename, 'w', encoding='utf-8') as f:
+            # 保存Markdown源文件
+            report_filename_md = os.path.splitext(file_path)[0] + "_report.md"
+            with open(report_filename_md, 'w', encoding='utf-8') as f:
                 f.write(final_report)
             
             vlm_in = vlm_usage.get("prompt_tokens", 0)
@@ -408,7 +424,14 @@ class MainApp:
             llm_out = llm_usage.get("completion_tokens", 0)
 
             usage_log = f"Token用量: VLM(in:{vlm_in}, out:{vlm_out}), LLM(in:{llm_in}, out:{llm_out})"
-            self.ui_queue.put(("log", f"完成批改: {base_name} -> {os.path.basename(report_filename)}"))
+            
+            # 记录所有生成的文件
+            output_files = [os.path.basename(report_filename_md)]
+            if html_path and os.path.exists(html_path):
+                output_files.append(os.path.basename(html_path))
+                self.ui_queue.put(("log", f"已生成HTML报告: {os.path.basename(html_path)}"))
+
+            self.ui_queue.put(("log", f"完成批改: {base_name} -> {', '.join(output_files)}"))
             self.ui_queue.put(("log", usage_log))
 
             # 加锁以保证线程安全地更新和保存配置

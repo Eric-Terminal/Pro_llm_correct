@@ -26,7 +26,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11' # 你可以根据需要更改Python版本
+        python-version: '3.13.3' # 你可以根据需要更改Python版本
 
     # 第3步：安装依赖包
     - name: Install dependencies
