@@ -44,6 +44,7 @@ jobs:
     # --add-data: 将 config.json 文件包含到exe中
     # --name: 指定生成的可执行文件名
     - name: Build with PyInstaller
+      shell: cmd
       run: pyinstaller --noconsole --onefile --name "AI-Essay-Corrector" --add-data "config.json;." main.py
 
     # 第5步：将打包好的.exe上传，以便在工作流页面下载 (适合测试)
