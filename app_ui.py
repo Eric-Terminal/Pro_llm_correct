@@ -42,39 +42,47 @@ class AboutDialog(tk.Toplevel):
         llm_out = config_manager.get('UsageLlmOutput', 0)
 
         about_text = f"""
-欢迎使用 AI 作文批改助手！这是一款专为教育者和学生设计的智能工具，旨在利用前沿的人工智能技术，提供高效、精准、个性化的英文作文批改体验。
+欢迎使用 AI 作文批改助手！这是一款专为教育工作者和学生设计的智能工具，利用前沿的人工智能技术，提供高效、精准、个性化的英文作文批改体验。
 
-核心亮点:
-- **双核AI引擎:** 采用先进的两步式处理流程。首先由专用的视觉语言模型(VLM)对作文图片进行高精度手写识别(OCR)与专业的书写质量评估；随后，强大的大语言模型(LLM)会结合识别出的文本、作文题目以及书写评分，进行深度、全面的分析与批改。
+✨ 核心特色:
 
-- **极致的灵活性与可配置性:**
-  * **服务分离:** 您可以为VLM和LLM设置完全独立的API服务地址、密钥和模型名称，轻松适配不同的AI提供商（需要兼容OpenAI格式）或自建服务。
-  * **逻辑定制:** 书写评分的“敏感度因子”可在设置中调整，以适应不同年级或要求的评分标准。
-  * **模板开放:** 核心的LLM批改指令模板（Prompt）完全开放给用户。您可以在设置中自由修改，调整评分维度、总分、反馈风格等，实现高度个性化的批改要求。
+- **双AI引擎架构:** 采用创新的两步式处理流程。首先由专业的视觉语言模型(VLM)进行高精度手写文字识别(OCR)和专业的书写质量评估；然后由强大的大语言模型(LLM)结合识别文本、作文题目和书写评分，进行深度内容分析和专业批改。
 
-- **闪电般的并发处理:** 内置高效的多线程并发引擎，无论您选择一张还是上百张图片，程序都能同时处理，大幅缩短批量批改的等待时间。最大并发任务数亦可在设置中自由调整。
+- **极致灵活性:**
+  * **服务独立配置:** VLM和LLM支持完全独立的API服务地址、密钥和模型名称，轻松适配各种AI服务提供商（兼容OpenAI格式）
+  * **智能评分调节:** 书写质量"敏感度因子"可自由调整，适应不同年级和评分标准要求
+  * **Prompt完全开放:** 核心批改指令模板完全可自定义，支持调整评分标准、总分设置和反馈风格
 
-- **企业级的安全保障:** 我们深知API密钥的敏感性。所有密钥信息在保存到本地配置文件时，均经过强大的加密算法处理，有效防止明文泄露，保障您的账户安全。
+- **高效并发处理:** 内置多线程并发引擎，支持批量处理任意数量的图片，大幅提升批改效率，最大并发数可配置
 
-- **人性化的评分策略:** 卷面书写分采用更符合教学直觉的“向上取整至0.5分”规则，确保评分结果既精确又公平。
+- **企业级安全保障:** 所有API密钥均采用军事级加密算法存储，确保您的账户信息安全
 
-使用说明:
-1. **初次配置:** 点击“设置”，分别填入您的VLM和LLM服务提供商的URL、API密钥和模型名称。
-2. **输入题目:** 在主界面上方的文本框中，输入本次批改的“作文题目”。
-3. **选择文件:** 点击“选择图片”，一次性选择所有需要批改的学生作文图片。
-4. **开始批改:** 点击“开始批改”，程序将自动在后台进行并发处理，您可以在日志区看到实时进度。
-5. **获取报告:** 任务完成后，每一张图片对应的Markdown格式详细批改报告，都会自动生成在原图片所在的目录下。
+- **专业评分体系:** 针对高考英语作文场景设计，支持应用文(15分制)和读后续写(25分制)两种评分标准
+
+📋 使用指南:
+1. **首次设置:** 点击"设置"，配置VLM和LLM服务的URL、API密钥和模型
+2. **输入题目:** 在主界面文本框中输入本次批改的作文题目
+3. **选择图片:** 点击"选择图片"，可多选需要批改的作文图片
+4. **开始批改:** 点击"开始批改"，程序自动进行并发处理
+5. **查看报告:** 处理完成后，Markdown和HTML格式的详细批改报告将保存在原图片目录
+
+🎯 输出格式:
+- Markdown源文件（可编辑）
+- HTML可视化报告（美观易读）
+- 详细的语法错误分析
+- 专业的写作建议
+- 精准的分数评估
 
 作者: Eric_Terminal
-https://github.com/Eric-Terminal/Pro_llm_correct
-版本: 3.0
+项目地址: https://github.com/Eric-Terminal/Pro_llm_correct
+版本: 3.1
 
 ---
-历史Token使用量 (仅供参考):
-- VLM 输入: {vlm_in:,}
-- VLM 输出: {vlm_out:,}
-- LLM 输入: {llm_in:,}
-- LLM 输出: {llm_out:,}
+历史Token使用统计:
+- VLM 输入Token: {vlm_in:,}
+- VLM 输出Token: {vlm_out:,}
+- LLM 输入Token: {llm_in:,}
+- LLM 输出Token: {llm_out:,}
 """
         
         text_widget.insert("1.0", about_text)
@@ -93,28 +101,31 @@ https://github.com/Eric-Terminal/Pro_llm_correct
 
 
 class SettingsDialog(tk.Toplevel):
-    """“设置”对话框，允许用户配置VLM、LLM服务及其他应用参数。"""
-    def __init__(self, parent, current_config: dict):
+    """"设置"对话框，允许用户配置VLM、LLM服务及其他应用参数。"""
+    def __init__(self, parent, config_manager: ConfigManager):
         super().__init__(parent)
         self.transient(parent)
         self.title("设置")
         self.result = None
+        self.config_manager = config_manager
 
         # 为VLM和LLM服务分别创建Tkinter字符串变量
-        self.vlm_url = tk.StringVar(value=current_config.get("VlmUrl", "https://api.siliconflow.cn/v1/"))
-        self.vlm_api_key = tk.StringVar(value=current_config.get("VlmApiKey", ""))
-        self.vlm_model = tk.StringVar(value=current_config.get("VlmModel", "Pro/THUDM/GLM-4.1V-9B-Thinking"))
-        self.llm_url = tk.StringVar(value=current_config.get("LlmUrl", "https://api.siliconflow.cn/v1/"))
-        self.llm_api_key = tk.StringVar(value=current_config.get("LlmApiKey", ""))
-        self.llm_model = tk.StringVar(value=current_config.get("LlmModel", "moonshotai/Kimi-K2-Instruct"))
-        self.sensitivity_factor = tk.StringVar(value=current_config.get("SensitivityFactor", "1.5"))
-        self.max_workers = tk.StringVar(value=current_config.get("MaxWorkers", "4"))
-        self.max_retries = tk.StringVar(value=current_config.get("MaxRetries", "3"))
-        self.retry_delay = tk.StringVar(value=current_config.get("RetryDelay", "5"))
-        self.render_markdown = tk.BooleanVar(value=current_config.get("RenderMarkdown", True))
+        # 使用config_manager.get()方法获取解密后的值用于显示
+        self.vlm_url = tk.StringVar(value=config_manager.get("VlmUrl", "https://api.siliconflow.cn/v1"))
+        self.vlm_api_key = tk.StringVar(value=config_manager.get("VlmApiKey", ""))
+        self.vlm_model = tk.StringVar(value=config_manager.get("VlmModel", "Pro/THUDM/GLM-4.1V-9B-Thinking"))
+        self.llm_url = tk.StringVar(value=config_manager.get("LlmUrl", "https://api.siliconflow.cn/v1"))
+        self.llm_api_key = tk.StringVar(value=config_manager.get("LlmApiKey", ""))
+        self.llm_model = tk.StringVar(value=config_manager.get("LlmModel", "moonshotai/Kimi-K2-Instruct"))
+        self.sensitivity_factor = tk.StringVar(value=config_manager.get("SensitivityFactor", "1.5"))
+        self.max_workers = tk.StringVar(value=config_manager.get("MaxWorkers", "4"))
+        self.max_retries = tk.StringVar(value=config_manager.get("MaxRetries", "3"))
+        self.retry_delay = tk.StringVar(value=config_manager.get("RetryDelay", "5"))
+        self.save_markdown = tk.BooleanVar(value=config_manager.get("SaveMarkdown", True))
+        self.render_markdown = tk.BooleanVar(value=config_manager.get("RenderMarkdown", True))
         
         # 智能加载Prompt模板：优先使用用户自定义模板，否则使用默认模板
-        user_template = current_config.get("LlmPromptTemplate")
+        user_template = config_manager.get("LlmPromptTemplate")
         self.llm_prompt_template_str = user_template if user_template else DEFAULT_LLM_PROMPT_TEMPLATE
 
 
@@ -156,8 +167,10 @@ class SettingsDialog(tk.Toplevel):
         ttk.Entry(other_frame, textvariable=self.max_retries, width=40).grid(column=1, row=2, sticky=(tk.W, tk.E))
         ttk.Label(other_frame, text="重试延迟(秒):").grid(column=0, row=3, sticky=tk.W, pady=2)
         ttk.Entry(other_frame, textvariable=self.retry_delay, width=40).grid(column=1, row=3, sticky=(tk.W, tk.E))
-        ttk.Label(other_frame, text="渲染Markdown报告:").grid(column=0, row=4, sticky=tk.W, pady=2)
-        ttk.Checkbutton(other_frame, variable=self.render_markdown).grid(column=1, row=4, sticky=tk.W)
+        ttk.Label(other_frame, text="保存Markdown文件:").grid(column=0, row=4, sticky=tk.W, pady=2)
+        ttk.Checkbutton(other_frame, variable=self.save_markdown).grid(column=1, row=4, sticky=tk.W)
+        ttk.Label(other_frame, text="渲染HTML报告:").grid(column=0, row=5, sticky=tk.W, pady=2)
+        ttk.Checkbutton(other_frame, variable=self.render_markdown).grid(column=1, row=5, sticky=tk.W)
         
         # LLM Prompt模板编辑区域
         prompt_frame = ttk.LabelFrame(frame, text="LLM Prompt 模板 (可在此修改，请勿修改{}占位符内容导致程序参数无法正常传递，通常情况下修改总分即可)", padding="10")
@@ -191,6 +204,9 @@ class SettingsDialog(tk.Toplevel):
             "LlmModel": self.llm_model.get(),
             "SensitivityFactor": self.sensitivity_factor.get(),
             "MaxWorkers": self.max_workers.get(),
+            "MaxRetries": self.max_retries.get(),
+            "RetryDelay": self.retry_delay.get(),
+            "SaveMarkdown": self.save_markdown.get(),
             "RenderMarkdown": self.render_markdown.get(),
             "LlmPromptTemplate": self.llm_prompt_text.get("1.0", "end-1c")
         }
@@ -318,7 +334,7 @@ class MainApp:
 
     def _open_settings_dialog(self):
         """打开设置对话框，并根据返回结果更新和保存配置。"""
-        dialog = SettingsDialog(self.root, self.config_manager.config)
+        dialog = SettingsDialog(self.root, self.config_manager)
         if dialog.result:
             # 清理旧的、统一的AI配置和OCR配置，以兼容新版分离的配置
             self.config_manager.config.pop("AiUrl", None)
@@ -413,10 +429,14 @@ class MainApp:
         try:
             final_report, vlm_usage, llm_usage, html_path = self.api_service.process_essay_image(file_path, topic)
             
-            # 保存Markdown源文件
+            # 检查是否保存Markdown文件
+            save_markdown = self.config_manager.get("SaveMarkdown", True)
             report_filename_md = os.path.splitext(file_path)[0] + "_report.md"
-            with open(report_filename_md, 'w', encoding='utf-8') as f:
-                f.write(final_report)
+            
+            # 保存Markdown源文件（如果配置开启）
+            if save_markdown:
+                with open(report_filename_md, 'w', encoding='utf-8') as f:
+                    f.write(final_report)
             
             vlm_in = vlm_usage.get("prompt_tokens", 0)
             vlm_out = vlm_usage.get("completion_tokens", 0)
@@ -426,10 +446,20 @@ class MainApp:
             usage_log = f"Token用量: VLM(in:{vlm_in}, out:{vlm_out}), LLM(in:{llm_in}, out:{llm_out})"
             
             # 记录所有生成的文件
-            output_files = [os.path.basename(report_filename_md)]
+            output_files = []
+            if save_markdown:
+                output_files.append(os.path.basename(report_filename_md))
+            
+            # 检查是否只勾选了HTML，如果是则删除Markdown文件
+            render_html = self.config_manager.get("RenderMarkdown", True)
             if html_path and os.path.exists(html_path):
                 output_files.append(os.path.basename(html_path))
                 self.ui_queue.put(("log", f"已生成HTML报告: {os.path.basename(html_path)}"))
+                
+                # 如果只勾选HTML，不勾选Markdown，则删除Markdown文件
+                if not save_markdown and render_html and os.path.exists(report_filename_md):
+                    os.remove(report_filename_md)
+                    self.ui_queue.put(("log", f"已删除Markdown文件（仅保留HTML）"))
 
             self.ui_queue.put(("log", f"完成批改: {base_name} -> {', '.join(output_files)}"))
             self.ui_queue.put(("log", usage_log))

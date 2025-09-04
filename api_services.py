@@ -53,6 +53,7 @@ Based on the identified essay type, apply the corresponding grading logic. The H
 Analyze the text, identify the essay type, calculate the scores, and present your complete feedback in **Simplified Chinese** using the precise Markdown format specified in the "OUTPUT SPECIFICATION" section. Ensure the final score correctly reflects the total points possible (15 or 25).
 #--- End of English Instructions ---
 # OUTPUT SPECIFICATION (MUST BE IN SIMPLIFIED CHINESE)
+#你应该综合考量书写和内容的评分，内容是主要的，字体是次要的，例如对于写的内容和作文毫无关系但是字很好看的，不应该给3分而是直接给0分
 # 请使用以下Markdown格式，并用简体中文填充所有内容，优点找不到不要硬找，问题建议要把全部问题找出来并且解析，都要遵循类似格式。对于分数的总分则必须由你选择是15分还是25分(不一定是下面的15分)。
 
 

@@ -38,14 +38,10 @@ class ConfigManager:
 
     def _ensure_default_render_settings(self):
         """确保渲染相关的默认设置存在"""
-        if self.get("RenderMarkdownToImage") is None:
-            self.set("RenderMarkdownToImage", True)  # 默认开启渲染功能
-        if self.get("RenderImageFormat") is None:
-            self.set("RenderImageFormat", "png")  # 默认PNG格式
-        if self.get("RenderImageWidth") is None:
-            self.set("RenderImageWidth", 800)  # 默认图片宽度
-        if self.get("RenderImageQuality") is None:
-            self.set("RenderImageQuality", 90)  # 默认图片质量
+        if self.get("SaveMarkdown") is None:
+            self.set("SaveMarkdown", True)  # 默认保存Markdown文件
+        if self.get("RenderMarkdown") is None:
+            self.set("RenderMarkdown", True)  # 默认开启HTML渲染功能
 
     def _decrypt(self, encrypted_value: str) -> str:
         """

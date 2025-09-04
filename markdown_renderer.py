@@ -119,7 +119,6 @@ class MarkdownRenderer:
                 margin: 10px 0;
             }
         </style>
-        </style>
         """
         return f"""
         <!DOCTYPE html>
