@@ -75,7 +75,7 @@ class AboutDialog(tk.Toplevel):
 
 作者: Eric_Terminal
 项目地址: https://github.com/Eric-Terminal/Pro_llm_correct
-版本: 3.1
+版本: 3.2
 
 ---
 历史Token使用统计:
