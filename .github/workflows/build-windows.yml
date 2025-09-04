@@ -1,6 +1,7 @@
 # 工作流的名称
 name: Build Windows Executable
 
+# Trivial change to force a cache refresh
 # 触发条件：
 # 1. 当代码被推送到 main 分支时
 # 2. 当你创建一个新的 "Tag" (用于发布新版本)
