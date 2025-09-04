@@ -5,26 +5,27 @@ from api_services import ApiService
 import sys
 import os
 
-def resource_path(relative_path):
-    """
-    获取资源的绝对路径，以支持PyInstaller打包后的单文件应用。
 
-    在开发环境中，返回基于当前工作目录的相对路径。
-    在PyInstaller打包的应用中，返回临时文件夹`_MEIPASS`中的路径。
+def get_config_path():
+    """
+    获取配置文件的合适路径。
+    在开发环境使用当前目录，在打包环境使用exe所在目录。
     """
     try:
-        # 尝试获取PyInstaller在运行时创建的临时路径
-        base_path = sys._MEIPASS
+        # 检查是否在PyInstaller打包环境中
+        sys._MEIPASS
+        # 如果是打包环境，使用exe文件所在目录
+        exe_dir = os.path.dirname(sys.executable)
+        return os.path.join(exe_dir, "config.json")
     except Exception:
-        # 如果`_MEIPASS`属性不存在，说明是在开发环境，使用当前目录
-        base_path = os.path.abspath(".")
-
-    return os.path.join(base_path, relative_path)
+        # 开发环境，使用当前目录
+        return "config.json"
 
 if __name__ == "__main__":
     # 1. 初始化核心服务
-    # 使用 resource_path 确保在打包后也能正确找到配置文件
-    config_manager = ConfigManager(resource_path("config.json"))
+    # 使用合适的配置文件路径
+    config_path = get_config_path()
+    config_manager = ConfigManager(config_path)
 
     # 2. 创建Tkinter主窗口
     root = tk.Tk()

@@ -41,11 +41,10 @@ jobs:
     # 第4步：使用PyInstaller打包
     # --noconsole: 这是一个GUI应用，不显示控制台窗口
     # --onefile: 打包成单个.exe文件
-    # --add-data: 将 config.json 文件包含到exe中
     # --name: 指定生成的可执行文件名
     - name: Build with PyInstaller
       shell: cmd
-      run: pyinstaller --noconsole --onefile --name "AI-Essay-Corrector" --add-data "config.json;." main.py
+      run: pyinstaller --noconsole --onefile --name "AI-Essay-Corrector" main.py
 
     # 第5步：将打包好的.exe上传，以便在工作流页面下载 (适合测试)
     - name: Upload artifact for testing
