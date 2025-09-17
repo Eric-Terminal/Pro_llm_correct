@@ -2,6 +2,8 @@ import json
 import os
 import base64
 import hashlib
+import platform
+import subprocess
 from typing import Dict, Optional, Tuple, Any
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -24,9 +26,39 @@ class ConfigManager:
         # 确保默认渲染设置存在
         self._ensure_default_render_settings()
 
+    def _get_device_identifier(self) -> str:
+        """
+        获取设备的唯一标识符（如序列号），用于加密。
+        这使得配置文件在另一台机器上无法解密。
+        """
+        system = platform.system()
+        try:
+            if system == "Windows":
+                # 使用wmic获取BIOS序列号
+                return subprocess.check_output("wmic bios get serialnumber", shell=True).decode().split('\n')[1].strip()
+            elif system == "Darwin":  # macOS
+                # 使用ioreg获取平台序列号
+                return subprocess.check_output("ioreg -l | grep IOPlatformSerialNumber", shell=True).decode().split('"')[-2]
+            elif system == "Linux":
+                # 尝试获取DMI产品UUID，如果失败则使用/etc/machine-id
+                try:
+                    return subprocess.check_output("sudo dmidecode -s system-serial-number", shell=True).decode().strip()
+                except Exception:
+                    with open("/etc/machine-id", "r") as f:
+                        return f.read().strip()
+        except Exception as e:
+            print(f"无法获取设备ID: {e}，将使用默认值。")
+            # 在无法获取硬件ID时提供一个固定的后备值
+            return "default-device-id-for-encryption"
+        return "unknown-device-for-security"
+
     def _initialize_encryption(self):
-        """使用预设的密码和盐生成加密密钥，并初始化Fernet加密/解密实例。"""
-        kdf = hashlib.pbkdf2_hmac('sha256', self._ENCRYPTION_PASSWORD, self._SALT, 100000)
+        """使用预设密码和设备唯一的盐生成加密密钥，并初始化Fernet。"""
+        device_id = self._get_device_identifier()
+        # 将设备ID与固定的盐结合，为每台设备创建唯一的盐
+        device_specific_salt = self._SALT + device_id.encode('utf-8')
+        
+        kdf = hashlib.pbkdf2_hmac('sha256', self._ENCRYPTION_PASSWORD, device_specific_salt, 100000)
         key = base64.urlsafe_b64encode(kdf)
         self._fernet = Fernet(key)
 

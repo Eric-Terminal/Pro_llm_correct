@@ -1,5 +1,8 @@
 import base64
 from typing import Dict, Any, Tuple, Optional
+import urllib.request
+import json
+from packaging import version
 from config_manager import ConfigManager
 from markdown_renderer import create_markdown_renderer
 import os
@@ -261,3 +264,26 @@ Strictly adhere to the following format. Do not output anything else.
                 self._log(f"已生成HTML报告: {os.path.basename(html_path)}")
         
         return final_report, vlm_usage, llm_usage, html_path
+
+
+def check_for_updates(current_version_str: str) -> Optional[str]:
+    """
+    Checks for new releases on GitHub.
+    Returns the new version tag if an update is available, otherwise None.
+    """
+    try:
+        url = "https://api.github.com/repos/Eric-Terminal/Pro_llm_correct/releases/latest"
+        # Add a user-agent to avoid being blocked
+        req = urllib.request.Request(url, headers={'User-Agent': 'Pro_llm_correct-Update-Checker'})
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode())
+                # 根据您的调试反馈，我们现在读取 'name' 字段来获取版本号
+                latest_version_name = data.get("name", "v0.0.0")
+                
+                # Use packaging.version for robust comparison
+                if version.parse(latest_version_name) > version.parse(current_version_str):
+                    return latest_version_name
+    except Exception as e:
+        logging.error(f"Failed to check for updates: {e}")
+    return None

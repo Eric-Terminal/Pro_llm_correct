@@ -40,7 +40,7 @@
 
 ---
 
-## 📖 使用指南
+##  使用指南
 
 ### 快速开始
 1. **下载程序**: 前往 [Releases页面](https://github.com/Eric-Terminal/Pro_llm_correct/releases) 下载最新版本

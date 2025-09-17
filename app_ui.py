@@ -6,11 +6,14 @@ import os
 from typing import List
 import concurrent.futures
 import logging
+import webbrowser
 from config_manager import ConfigManager
-from api_services import ApiService, DEFAULT_LLM_PROMPT_TEMPLATE
+from api_services import ApiService, DEFAULT_LLM_PROMPT_TEMPLATE, check_for_updates
 
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+CURRENT_VERSION = "3.2.0"
 
 class AboutDialog(tk.Toplevel):
     """“关于”对话框，展示应用信息，支持滚动查看。"""
@@ -75,7 +78,7 @@ class AboutDialog(tk.Toplevel):
 
 作者: Eric_Terminal
 项目地址: https://github.com/Eric-Terminal/Pro_llm_correct
-版本: 3.2
+版本: {CURRENT_VERSION}
 
 ---
 历史Token使用统计:
@@ -116,13 +119,14 @@ class SettingsDialog(tk.Toplevel):
         self.vlm_model = tk.StringVar(value=config_manager.get("VlmModel", "Pro/THUDM/GLM-4.1V-9B-Thinking"))
         self.llm_url = tk.StringVar(value=config_manager.get("LlmUrl", "https://api.siliconflow.cn/v1"))
         self.llm_api_key = tk.StringVar(value=config_manager.get("LlmApiKey", ""))
-        self.llm_model = tk.StringVar(value=config_manager.get("LlmModel", "moonshotai/Kimi-K2-Instruct"))
+        self.llm_model = tk.StringVar(value=config_manager.get("LlmModel", "Qwen/Qwen3-235B-A22B-Instruct-2507"))
         self.sensitivity_factor = tk.StringVar(value=config_manager.get("SensitivityFactor", "1.5"))
         self.max_workers = tk.StringVar(value=config_manager.get("MaxWorkers", "4"))
         self.max_retries = tk.StringVar(value=config_manager.get("MaxRetries", "3"))
         self.retry_delay = tk.StringVar(value=config_manager.get("RetryDelay", "5"))
         self.save_markdown = tk.BooleanVar(value=config_manager.get("SaveMarkdown", True))
         self.render_markdown = tk.BooleanVar(value=config_manager.get("RenderMarkdown", True))
+        self.auto_update_check = tk.BooleanVar(value=config_manager.get("AutoUpdateCheck", True))
         
         # 智能加载Prompt模板：优先使用用户自定义模板，否则使用默认模板
         user_template = config_manager.get("LlmPromptTemplate")
@@ -140,7 +144,7 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(vlm_frame, text="VLM URL:").grid(column=0, row=0, sticky=tk.W, pady=2)
         ttk.Entry(vlm_frame, textvariable=self.vlm_url, width=40).grid(column=1, row=0, sticky=(tk.W, tk.E))
         ttk.Label(vlm_frame, text="VLM API Key:").grid(column=0, row=1, sticky=tk.W, pady=2)
-        ttk.Entry(vlm_frame, textvariable=self.vlm_api_key, width=40).grid(column=1, row=1, sticky=(tk.W, tk.E))
+        ttk.Entry(vlm_frame, textvariable=self.vlm_api_key, width=40, show='*').grid(column=1, row=1, sticky=(tk.W, tk.E))
         ttk.Label(vlm_frame, text="VLM 模型:").grid(column=0, row=2, sticky=tk.W, pady=2)
         ttk.Entry(vlm_frame, textvariable=self.vlm_model, width=40).grid(column=1, row=2, sticky=(tk.W, tk.E))
 
@@ -151,7 +155,7 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(llm_frame, text="LLM URL:").grid(column=0, row=0, sticky=tk.W, pady=2)
         ttk.Entry(llm_frame, textvariable=self.llm_url, width=40).grid(column=1, row=0, sticky=(tk.W, tk.E))
         ttk.Label(llm_frame, text="LLM API Key:").grid(column=0, row=1, sticky=tk.W, pady=2)
-        ttk.Entry(llm_frame, textvariable=self.llm_api_key, width=40).grid(column=1, row=1, sticky=(tk.W, tk.E))
+        ttk.Entry(llm_frame, textvariable=self.llm_api_key, width=40, show='*').grid(column=1, row=1, sticky=(tk.W, tk.E))
         ttk.Label(llm_frame, text="LLM 模型:").grid(column=0, row=2, sticky=tk.W, pady=2)
         ttk.Entry(llm_frame, textvariable=self.llm_model, width=40).grid(column=1, row=2, sticky=(tk.W, tk.E))
 
@@ -171,6 +175,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Checkbutton(other_frame, variable=self.save_markdown).grid(column=1, row=4, sticky=tk.W)
         ttk.Label(other_frame, text="渲染HTML报告:").grid(column=0, row=5, sticky=tk.W, pady=2)
         ttk.Checkbutton(other_frame, variable=self.render_markdown).grid(column=1, row=5, sticky=tk.W)
+        ttk.Label(other_frame, text="启动时检查更新:").grid(column=0, row=6, sticky=tk.W, pady=2)
+        ttk.Checkbutton(other_frame, variable=self.auto_update_check).grid(column=1, row=6, sticky=tk.W)
         
         # LLM Prompt模板编辑区域
         prompt_frame = ttk.LabelFrame(frame, text="LLM Prompt 模板 (可在此修改，请勿修改{}占位符内容导致程序参数无法正常传递，通常情况下修改总分即可)", padding="10")
@@ -208,6 +214,7 @@ class SettingsDialog(tk.Toplevel):
             "RetryDelay": self.retry_delay.get(),
             "SaveMarkdown": self.save_markdown.get(),
             "RenderMarkdown": self.render_markdown.get(),
+            "AutoUpdateCheck": self.auto_update_check.get(),
             "LlmPromptTemplate": self.llm_prompt_text.get("1.0", "end-1c")
         }
 
@@ -238,6 +245,7 @@ class MainApp:
         
         self._setup_ui()
         self._initialize_config()
+        self._check_for_updates_on_startup()
         self.root.after(100, self._process_ui_queue)
 
     def _setup_ui(self):
@@ -328,9 +336,14 @@ class MainApp:
             is_ok, missing_item = self.config_manager.check_settings()
             if is_ok:
                 return
-            if messagebox.askretrycancel("配置未完成", f"请配置: {missing_item}") == "cancel":
+            # 用户可以选择取消配置，此时直接退出程序
+            result = messagebox.askretrycancel("配置未完成",
+                f"请配置: {missing_item}\n\n点击'重试'继续配置，点击'取消'退出程序")
+            if result is None or result == "cancel" or not result:
+                # 用户点击取消或关闭对话框，直接退出程序
                 self.root.quit()
                 return
+            # 用户点击重试，继续循环
 
     def _open_settings_dialog(self):
         """打开设置对话框，并根据返回结果更新和保存配置。"""
@@ -401,6 +414,8 @@ class MainApp:
                     messagebox.showinfo("完成", "所有文件处理完成")
                     self.progress_bar['value'] = 0
                     self.is_file_selected = False
+                elif task == "update_found":
+                    self._show_update_dialog(data)
         except queue.Empty:
             pass
         finally:
@@ -474,3 +489,29 @@ class MainApp:
         
         # 无论成功或失败，都更新进度
         self.ui_queue.put(("progress", 1))
+
+    def _check_for_updates_on_startup(self):
+        """如果启用了自动更新检查，则在后台线程中启动检查。"""
+        if self.config_manager.get("AutoUpdateCheck", True):
+            thread = threading.Thread(target=self._perform_update_check, daemon=True)
+            thread.start()
+
+    def _perform_update_check(self):
+        """执行实际的更新检查并向UI队列发送结果。"""
+        logging.info("正在检查更新...")
+        new_version = check_for_updates(CURRENT_VERSION)
+        if new_version:
+            logging.info(f"发现新版本: {new_version}")
+            self.ui_queue.put(("update_found", new_version))
+        else:
+            logging.info("当前已是最新版本。")
+
+    def _show_update_dialog(self, new_version: str):
+        """显示更新可用对话框，并根据用户选择打开下载页面。"""
+        title = "发现新版本"
+        message = f"发现新版本 {new_version}！\n您当前的版本是 {CURRENT_VERSION}。\n\n是否前往下载页面？"
+        if messagebox.askyesno(title, message):
+            try:
+                webbrowser.open("https://github.com/Eric-Terminal/Pro_llm_correct/releases/latest")
+            except Exception as e:
+                messagebox.showerror("打开失败", f"无法打开浏览器：{e}")

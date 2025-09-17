@@ -1,5 +1,5 @@
 # 工作流的名称
-name: Build Windows Executable
+name: Build Cross-Platform Executables
 
 # Trivial change to force a cache refresh
 # 触发条件：
@@ -15,8 +15,10 @@ on:
 
 jobs:
   build:
-    # 指定运行环境为最新的Windows服务器
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     permissions:
       contents: write
@@ -44,19 +46,18 @@ jobs:
     # --onefile: 打包成单个.exe文件
     # --name: 指定生成的可执行文件名
     - name: Build with PyInstaller
-      shell: cmd
       run: pyinstaller --noconsole --onefile --name "AI-Essay-Corrector" main.py
 
-    # 第5步：将打包好的.exe上传，以便在工作流页面下载 (适合测试)
+    # 第5步：将打包好的上传，以便在工作流页面下载 (适合测试)
     - name: Upload artifact for testing
       uses: actions/upload-artifact@v4
       with:
-        name: AI-Essay-Corrector-Windows-exe
-        path: dist/AI-Essay-Corrector.exe
+        name: AI-Essay-Corrector-${{ matrix.os }}
+        path: dist/AI-Essay-Corrector*
 
     # 第6步 (专业级开源发布): 当你创建Tag时，自动创建Release并附上.exe
     - name: Create Release and Upload Asset
       if: startsWith(github.ref, 'refs/tags/') # 仅在创建Tag时运行此步骤
       uses: softprops/action-gh-release@v2
       with:
-        files: dist/AI-Essay-Corrector.exe
+        files: dist/AI-Essay-Corrector*
