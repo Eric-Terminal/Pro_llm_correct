@@ -1,14 +1,6 @@
 # AI 作文批改助手 ✨
 
-(＾▽＾)ﾉﾞ 欢迎使用 AI 作文批改助手！这是一款专为教育工作者和学生设计的智能桌面工具，能够像经验丰富的英语老师一样，自动批改手写英文作文图片，并生成专业详细的批改报告。
-
-## 🎯 应用界面预览
-![应用界面](photo/1.png)
-![设置界面](photo/2.png)
-![批改过程](photo/3.png)
-![批改报告](photo/4.png)
-
----
+(＾▽＾)ﾉﾞ 欢迎使用 AI 作文批改助手！这是一款专为教育工作者和学生设计的本地 Web 应用，能够像经验丰富的英语老师一样，自动批改手写英文作文图片，并生成专业详细的批改报告。
 
 ## ✨ 核心特色功能
 
@@ -44,19 +36,26 @@
 
 ### 快速开始
 1. **下载程序**: 前往 [Releases页面](https://github.com/Eric-Terminal/Pro_llm_correct/releases) 下载最新版本
-2. **首次配置**: 
-   - 运行程序，自动弹出设置窗口
-   - 配置VLM和LLM服务的URL、API密钥和模型名称
-   - 点击确定保存，密钥自动加密存储
-3. **开始批改**:
-   - 在主界面输入作文题目
-   - 点击"选择图片"，多选需要批改的作文图片
-   - 点击"开始批改"，程序自动进行并发处理
-4. **查看报告**: 处理完成后，Markdown和HTML格式报告自动保存在原图片目录
+2. **启动 Web UI**:
+   - 在终端运行 `python3 main.py`
+   - 程序会从 4567 端口起寻找可用端口，并自动打开浏览器访问 Web 界面
+3. **配置服务**:
+   - 通过顶部导航切换到“服务设置”页，填写 VLM/LLM 的 URL、API Key、模型名称等参数
+   - 可自定义 Prompt 模板、并发数量、重试策略与输出目录
+   - 密钥字段不会回显；若提示“已保存”，留空即可沿用原值，输入新值即可覆盖
+   - 点击“保存设置”即可持久化到本地 `config.json`（密钥自动加密）
+4. **上传批改**:
+   - Web 首页默认停留在“批改作文”页，在表单中输入作文题目或场景说明
+   - 上传需要批改的作文照片（支持多选）
+   - 点击“开始批改”，浏览器会实时显示每个文件的处理状态与日志
+5. **查看报告**:
+   - 所有输出默认保存在 `output_reports/<时间戳>/` 目录
+   - 结果卡片中提供 Markdown/HTML 链接，可直接在浏览器查看或下载
 
 ### 输出文件说明
-- `原文件名_report.md`: Markdown格式详细批改报告
-- `原文件名_report.html`: HTML可视化批改报告
+- 默认保存在 `output_reports/<时间戳>/` 目录
+- `原文件名_report.md`: Markdown 格式详细批改报告
+- `原文件名_report.html`: HTML 可视化批改报告
 - 包含: 作文内容、综合评价、亮点优点、问题建议、分数评估
 
 ---
@@ -76,9 +75,10 @@ source venv/bin/activate  # Linux/Mac
 
 # 3. 安装依赖
 pip install -r requirements.txt
+# 需要确保系统已安装 curl（macOS/Linux 默认自带，Windows 可安装 Git Bash 或使用 WSL）
 
 # 4. 运行程序
-python main.py
+python3 main.py
 ```
 
 ### 项目打包
@@ -90,11 +90,11 @@ pyinstaller --noconsole --onefile main.py
 ```
 
 ### 技术架构
-- **前端**: Tkinter GUI界面
+- **前端**: Flask Web 服务 + 原生 HTML/CSS（玻璃拟态苹果风界面）
 - **核心**: 双AI引擎架构 (VLM + LLM)
-- **安全**: cryptography加密库
-- **并发**: threading + concurrent.futures
-- **输出**: Markdown + HTML渲染
+- **安全**: cryptography 加密存储配置
+- **并发**: threading + concurrent.futures.ThreadPoolExecutor
+- **输出**: Markdown/HTML 报告（内置样式渲染器）
 
 ---
 
@@ -113,6 +113,7 @@ pyinstaller --noconsole --onefile main.py
 - `MaxWorkers`: 最大并发数（默认4）
 - `MaxRetries`: 最大重试次数（默认3）
 - `RetryDelay`: 重试延迟秒数（默认5）
+- `RequestTimeout`: 单次 API 请求超时时长（秒，默认120）
 - `SaveMarkdown`: 是否保存Markdown文件（默认True）
 - `RenderMarkdown`: 是否渲染HTML报告（默认True）
 

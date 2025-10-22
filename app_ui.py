@@ -9,11 +9,10 @@ import logging
 import webbrowser
 from config_manager import ConfigManager
 from api_services import ApiService, DEFAULT_LLM_PROMPT_TEMPLATE, check_for_updates
+from version import CURRENT_VERSION
 
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-CURRENT_VERSION = "3.2.0"
 
 class AboutDialog(tk.Toplevel):
     """“关于”对话框，展示应用信息，支持滚动查看。"""

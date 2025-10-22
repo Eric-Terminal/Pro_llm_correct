@@ -1,1 +1,23 @@
-{}
+{
+    "__device_salt__": "c2FsdF9mb3JfbGxtX2FwcF9jb25maWdDMTdGUkFDUlE2TDQ=",
+    "__device_fingerprint__": "d9bddd980989cdac1e26fdb26d21fa098ea9d5f2dc2da062b069d268f8c9a1ff",
+    "__device_fingerprint_source__": "hardware",
+    "SaveMarkdown": true,
+    "RenderMarkdown": true,
+    "VlmUrl": "https://api.ericterminal.com/v1",
+    "VlmApiKey": "gAAAAABo-F2EZa6kKSdQNolAPQcvN5RMdyCcgJpQ2VFg0szZWFWfa7MQQsMWT7R6jKpSBgVxSCYuzEC2A-xcZqIdkY_rqdFSYzT0Uou84UKP0aqkTCNTJwd3wwetbYQTpcWtJpRuw6KrVnFtypcON4K7gXdV0biDEw==",
+    "VlmModel": "gemini-2.5-pro",
+    "LlmUrl": "https://api.ericterminal.com/v1",
+    "LlmApiKey": "gAAAAABo-F2E-b6xQWGj5DhJfTNlZkekVeidkYI9ZH7-bhPayqcbAkNVsc9NpgSFo5b1dfifT9cVirJeGjoxobSS6ewWJvDN0JgbZa2e1pZeo5Gsqvei3O2s4xOEk9kAsWej6WjynjFYHkBEz10sK53cCPHZI1RqAA==",
+    "LlmModel": "gemini-2.5-pro",
+    "OutputDirectory": "output_reports",
+    "MaxWorkers": 4,
+    "MaxRetries": 3,
+    "RetryDelay": 5,
+    "SensitivityFactor": 1.0,
+    "AutoUpdateCheck": true,
+    "UsageVlmInput": 645,
+    "UsageVlmOutput": 19,
+    "UsageLlmInput": 1385,
+    "UsageLlmOutput": 296
+}

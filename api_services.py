@@ -8,9 +8,9 @@ from markdown_renderer import create_markdown_renderer
 import os
 import mimetypes
 import re
-from openai import OpenAI
 import time
 import logging
+import subprocess
 
 # 定义默认的LLM Prompt模板。使用`.format()`方法进行后续的动态填充。
 DEFAULT_LLM_PROMPT_TEMPLATE = """# ESSAY TOPIC
@@ -105,6 +105,8 @@ class ApiService:
         """将日志消息放入UI队列。"""
         if self.ui_queue:
             self.ui_queue.put(("log", message))
+        else:
+            logging.info(message)
 
     def _encode_image_to_base64_url(self, image_path: str) -> str:
         """将本地图片文件编码为Base64数据URL。"""
@@ -116,6 +118,89 @@ class ApiService:
         with open(image_path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
         return f"data:{mime_type};base64,{encoded_string}"
+
+    def _chat_endpoint(self, base_url: Optional[str]) -> str:
+        if not base_url:
+            raise ValueError("服务地址未配置，请先在设置中填写 API Base URL")
+        return base_url.rstrip('/') + "/chat/completions"
+
+    def _usage_from_response(self, response_json: Dict[str, Any]) -> Dict[str, int]:
+        usage = response_json.get("usage") or {}
+        return {
+            "prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
+            "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
+        }
+
+    def _post_json_with_curl(self, endpoint: str, api_key: Optional[str], payload: Dict[str, Any], timeout: float) -> Dict[str, Any]:
+        data_str = json.dumps(payload, ensure_ascii=False)
+        command = [
+            "curl",
+            "-sS",
+            "-X",
+            "POST",
+            endpoint,
+            "-H",
+            "Content-Type: application/json",
+            "--data-binary",
+            "@-",
+            "-w",
+            "\nHTTP_STATUS:%{http_code}",
+            "--max-time",
+            str(max(timeout, 1.0)),
+        ]
+        if api_key:
+            command.extend(["-H", f"Authorization: Bearer {api_key}"])
+
+        completed = subprocess.run(command, capture_output=True, text=True, input=data_str)
+        stdout = completed.stdout or ""
+        stderr = completed.stderr.strip()
+
+        status_code = None
+        if "HTTP_STATUS:" in stdout:
+            stdout, status_part = stdout.rsplit("HTTP_STATUS:", 1)
+            try:
+                status_code = int(status_part.strip())
+            except ValueError:
+                status_code = None
+
+        response_text = stdout.strip()
+
+        if completed.returncode != 0 or (status_code and status_code >= 400):
+            error_message = response_text or stderr or f"curl exited with code {completed.returncode}"
+            raise RuntimeError(f"调用失败 (HTTP {status_code}): {error_message}")
+
+        if not response_text:
+            return {}
+
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"无法解析 API 返回的 JSON: {response_text[:500]}") from exc
+
+    def _invoke_chat_completion(
+        self,
+        label: str,
+        base_url: Optional[str],
+        api_key: Optional[str],
+        payload: Dict[str, Any],
+        max_retries: int,
+        retry_delay: int,
+        timeout: float,
+    ) -> Dict[str, Any]:
+        endpoint = self._chat_endpoint(base_url)
+        last_error: Optional[Exception] = None
+        for attempt in range(max_retries):
+            try:
+                return self._post_json_with_curl(endpoint, api_key, payload, timeout)
+            except Exception as exc:  # pylint: disable=broad-except
+                last_error = exc
+                if attempt == max_retries - 1:
+                    raise
+                self._log(f"{label} 调用失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})，错误: {exc}")
+                time.sleep(retry_delay)
+        if last_error:
+            raise last_error
+        raise RuntimeError(f"{label} 调用失败：未知错误")
 
     def process_essay_image(self, file_path: str, topic: str) -> Tuple[str, Dict[str, int], Dict[str, int]]:
         """
@@ -131,19 +216,12 @@ class ApiService:
         except (ValueError, TypeError):
             max_retries = 3
             retry_delay = 5
-        
-        for attempt in range(max_retries):
-            try:
-                vlm_client = OpenAI(
-                    api_key=self.config.get("VlmApiKey"),
-                    base_url=self.config.get("VlmUrl")
-                )
-                break
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                self._log(f"VLM客户端创建失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})")
-                time.sleep(retry_delay)
+
+        try:
+            request_timeout = float(self.config.get("RequestTimeout", 120))
+        except (ValueError, TypeError):
+            request_timeout = 120.0
+
         base64_image_url = self._encode_image_to_base64_url(file_path)
 
         vlm_prompt = """# ROLE
@@ -173,21 +251,28 @@ Strictly adhere to the following format. Do not output anything else.
         vlm_messages = [{"role": "user", "content": [{"type": "text", "text": vlm_prompt}, {"type": "image_url", "image_url": {"url": base64_image_url}}]}]
         
         vlm_model = self.config.get("VlmModel", "Pro/THUDM/GLM-4.1V-9B-Thinking")
-        for attempt in range(max_retries):
-            try:
-                vlm_response = vlm_client.chat.completions.create(model=vlm_model, messages=vlm_messages, max_tokens=4096, temperature=1)
-                vlm_output = vlm_response.choices[0].message.content or ""
-                break
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                self._log(f"VLM调用失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})")
-                time.sleep(retry_delay)
-        
-        vlm_usage = {
-            "prompt_tokens": vlm_response.usage.prompt_tokens if vlm_response.usage else 0,
-            "completion_tokens": vlm_response.usage.completion_tokens if vlm_response.usage else 0,
+        vlm_payload = {
+            "model": vlm_model,
+            "messages": vlm_messages,
+            "max_tokens": 4096,
+            "temperature": 1,
         }
+        vlm_response_json = self._invoke_chat_completion(
+            "VLM",
+            self.config.get("VlmUrl"),
+            self.config.get("VlmApiKey"),
+            vlm_payload,
+            max_retries,
+            retry_delay,
+            request_timeout,
+        )
+
+        choices = vlm_response_json.get("choices") or []
+        if not choices:
+            raise ValueError(f"VLM 未返回 choices，响应：{vlm_response_json}")
+        vlm_output = choices[0].get("message", {}).get("content") or ""
+
+        vlm_usage = self._usage_from_response(vlm_response_json)
         
         # 解析VLM返回的XML格式输出，提取分数和文本
         wscore_match = re.search(r'<wscore>(.*?)</wscore>', vlm_output, re.DOTALL)
@@ -207,19 +292,6 @@ Strictly adhere to the following format. Do not output anything else.
             raise ValueError(f"VLM未能按预期格式返回，无法解析文本。模型返回：\n{vlm_output}")
 
         # --- 步骤 2: 调用LLM生成批改报告 ---
-        for attempt in range(max_retries):
-            try:
-                llm_client = OpenAI(
-                    api_key=self.config.get("LlmApiKey"),
-                    base_url=self.config.get("LlmUrl")
-                )
-                break
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                self._log(f"LLM客户端创建失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})")
-                time.sleep(retry_delay)
-        
         # 从配置加载Prompt模板，若用户未定义则使用默认模板
         prompt_template = self.config.get("LlmPromptTemplate")
         if not prompt_template:
@@ -235,22 +307,34 @@ Strictly adhere to the following format. Do not output anything else.
         llm_messages = [{"role": "user", "content": final_llm_prompt}]
 
         llm_model = self.config.get("LlmModel", "moonshotai/Kimi-K2-Instruct")
-        for attempt in range(max_retries):
-            try:
-                llm_response = llm_client.chat.completions.create(model=llm_model, messages=llm_messages, temperature=1, max_tokens=16384)
-                final_report = llm_response.choices[0].message.content or "错误：AI未能生成报告。"
-                break
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    final_report = f"错误：AI生成报告失败（达到最大重试次数 {max_retries} 次）"
-                else:
-                    self._log(f"LLM调用失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})")
-                    time.sleep(retry_delay)
-
-        llm_usage = {
-            "prompt_tokens": llm_response.usage.prompt_tokens if llm_response.usage else 0,
-            "completion_tokens": llm_response.usage.completion_tokens if llm_response.usage else 0,
+        llm_payload = {
+            "model": llm_model,
+            "messages": llm_messages,
+            "temperature": 1,
+            "max_tokens": 16384,
         }
+
+        final_report: str
+        try:
+            llm_response_json = self._invoke_chat_completion(
+                "LLM",
+                self.config.get("LlmUrl"),
+                self.config.get("LlmApiKey"),
+                llm_payload,
+                max_retries,
+                retry_delay,
+                request_timeout,
+            )
+            llm_choices = llm_response_json.get("choices") or []
+            if not llm_choices:
+                raise ValueError(f"LLM 未返回 choices，响应：{llm_response_json}")
+            final_report = llm_choices[0].get("message", {}).get("content") or "错误：AI未能生成报告。"
+        except Exception as exc:
+            self._log(f"LLM 调用失败：{exc}")
+            final_report = f"错误：AI生成报告失败（{exc}）"
+            llm_response_json = {}
+
+        llm_usage = self._usage_from_response(llm_response_json)
 
         # 渲染Markdown为HTML（如果配置开启）
         html_path = None
