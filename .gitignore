@@ -29,3 +29,5 @@ Thumbs.db
 # It should not be committed to version control.
 
 *.html
+config.json
+output_reports/
