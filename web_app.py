@@ -51,6 +51,9 @@ def create_app(config_manager: ConfigManager) -> Flask:
 
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB payload ceiling
+    app.logger.handlers.clear()
+    app.logger.propagate = True
+    logger = logging.getLogger("essay_corrector.web")
 
     api_service = ApiService(config_manager)
     config_lock = threading.Lock()
@@ -156,7 +159,7 @@ def create_app(config_manager: ConfigManager) -> Flask:
                     config_manager.save()
 
             except Exception as exc:  # pylint: disable=broad-except
-                logging.exception("文件处理失败: %s", saved_path)
+                logger.exception("文件处理失败: %s", saved_path)
                 error = str(exc)
                 logs.append(f"处理失败: {error}")
 
@@ -253,14 +256,17 @@ def create_app(config_manager: ConfigManager) -> Flask:
             "VlmApiKey": "",
             "HasVlmApiKey": has_vlm_key,
             "VlmModel": config_manager.get("VlmModel", ""),
+            "VlmTemperature": config_manager.get("VlmTemperature", 0.0),
             "LlmUrl": config_manager.get("LlmUrl", ""),
             "LlmApiKey": "",
             "HasLlmApiKey": has_llm_key,
             "LlmModel": config_manager.get("LlmModel", ""),
+            "LlmTemperature": config_manager.get("LlmTemperature", 0.0),
             "SensitivityFactor": config_manager.get("SensitivityFactor", "1.0"),
             "MaxWorkers": config_manager.get("MaxWorkers", 4),
             "MaxRetries": config_manager.get("MaxRetries", 3),
             "RetryDelay": config_manager.get("RetryDelay", 5),
+            "RequestTimeout": config_manager.get("RequestTimeout", 120),
             "SaveMarkdown": _as_bool(config_manager.get("SaveMarkdown", True), True),
             "RenderMarkdown": _as_bool(config_manager.get("RenderMarkdown", True), True),
             "AutoUpdateCheck": _as_bool(config_manager.get("AutoUpdateCheck", True), True),
@@ -289,6 +295,11 @@ def create_app(config_manager: ConfigManager) -> Flask:
             "LlmApiKey",
         ]
         int_fields = ["MaxWorkers", "MaxRetries", "RetryDelay"]
+        float_fields = {
+            "RequestTimeout": (1.0, None),
+            "VlmTemperature": (0.0, 2.0),
+            "LlmTemperature": (0.0, 2.0),
+        }
         bool_fields = ["SaveMarkdown", "RenderMarkdown", "AutoUpdateCheck"]
 
         updates: Dict[str, Any] = {}
@@ -317,6 +328,19 @@ def create_app(config_manager: ConfigManager) -> Flask:
                     updates[key] = int(payload[key])
                 except (TypeError, ValueError):
                     return jsonify({"error": f"{key} 需要是整数"}), 400
+
+        for key, bounds in float_fields.items():
+            if key in payload and payload[key] not in (None, ""):
+                try:
+                    value = float(payload[key])
+                except (TypeError, ValueError):
+                    return jsonify({"error": f"{key} 需要是数字"}), 400
+                min_val, max_val = bounds
+                if min_val is not None and value < min_val:
+                    return jsonify({"error": f"{key} 不能小于 {min_val}"}), 400
+                if max_val is not None and value > max_val:
+                    return jsonify({"error": f"{key} 不能大于 {max_val}"}), 400
+                updates[key] = value
 
         if "SensitivityFactor" in payload and payload["SensitivityFactor"] not in (None, ""):
             try:
@@ -854,6 +878,9 @@ def create_app(config_manager: ConfigManager) -> Flask:
                                 <label>VLM 模型
                                     <input type="text" name="vlm_model" autocomplete="off" />
                                 </label>
+                                <label>VLM 温度 (0-2)
+                                    <input type="number" name="vlm_temperature" min="0" max="2" step="0.1" />
+                                </label>
                                 <label>LLM URL
                                     <input type="text" name="llm_url" autocomplete="off" />
                                 </label>
@@ -862,6 +889,9 @@ def create_app(config_manager: ConfigManager) -> Flask:
                                 </label>
                                 <label>LLM 模型
                                     <input type="text" name="llm_model" autocomplete="off" />
+                                </label>
+                                <label>LLM 温度 (0-2)
+                                    <input type="number" name="llm_temperature" min="0" max="2" step="0.1" />
                                 </label>
                                 <label>手写敏感度 (建议 1.0)
                                     <input type="text" name="sensitivity_factor" autocomplete="off" />
@@ -874,6 +904,9 @@ def create_app(config_manager: ConfigManager) -> Flask:
                                 </label>
                                 <label>重试延迟 (秒)
                                     <input type="number" name="retry_delay" min="1" />
+                                </label>
+                                <label>请求超时时间 (秒)
+                                    <input type="number" name="request_timeout" min="1" step="1" />
                                 </label>
                                 <label>输出目录
                                     <input type="text" name="output_directory" autocomplete="off" />
@@ -898,6 +931,17 @@ def create_app(config_manager: ConfigManager) -> Flask:
                 <div class="view" data-view-section="about">
                     <div class="section">
                         <h2>关于与更新</h2>
+                        <div class="about-card">
+                            <h3>AI 作文批改助手</h3>
+                            <p>一款专注于英语作文批改的 Web 应用，整合视觉语言模型（VLM）与大语言模型（LLM），帮助教师与学生高效获得结构化反馈。</p>
+                            <ul>
+                                <li>两阶段流水线：先识别手写文本与书写分，再生成全中文批改报告。</li>
+                                <li>任务分离：所有图片自动归档到独立 run id，方便回溯、分享与比对。</li>
+                                <li>Prompt 可编辑：浏览器内直接替换评分模板，快速适配不同考试场景。</li>
+                                <li>安全可控：API Key 本地加密保存，Token 用量实时累计并在界面呈现。</li>
+                            </ul>
+                            <p class="muted">作者：Eric_Terminal · 项目主页：<a href="https://github.com/Eric-Terminal/Pro_llm_correct" target="_blank" rel="noopener">GitHub</a></p>
+                        </div>
                         <div class="about-card">
                             <div><strong>当前版本：</strong><span id="about-current">{{ current_version }}</span></div>
                             <div id="about-latest">正在获取最新版本信息...</div>
@@ -987,13 +1031,16 @@ def create_app(config_manager: ConfigManager) -> Flask:
                     settingsForm.vlm_url.value = data.VlmUrl || '';
                     settingsForm.vlm_api_key.value = '';
                     settingsForm.vlm_model.value = data.VlmModel || '';
+                    settingsForm.vlm_temperature.value = data.VlmTemperature ?? 0;
                     settingsForm.llm_url.value = data.LlmUrl || '';
                     settingsForm.llm_api_key.value = '';
                     settingsForm.llm_model.value = data.LlmModel || '';
+                    settingsForm.llm_temperature.value = data.LlmTemperature ?? 0;
                     settingsForm.sensitivity_factor.value = data.SensitivityFactor || '';
                     settingsForm.max_workers.value = data.MaxWorkers || 4;
                     settingsForm.max_retries.value = data.MaxRetries || 3;
                     settingsForm.retry_delay.value = data.RetryDelay || 5;
+                    settingsForm.request_timeout.value = data.RequestTimeout ?? 120;
                     settingsForm.output_directory.value = data.OutputDirectory || '{{ default_output_dir }}';
                     settingsForm.save_markdown.checked = !!data.SaveMarkdown;
                     settingsForm.render_markdown.checked = !!data.RenderMarkdown;
@@ -1051,13 +1098,16 @@ def create_app(config_manager: ConfigManager) -> Flask:
                         VlmUrl: settingsForm.vlm_url.value.trim(),
                         VlmApiKey: settingsForm.vlm_api_key.value.trim(),
                         VlmModel: settingsForm.vlm_model.value.trim(),
+                        VlmTemperature: settingsForm.vlm_temperature.value,
                         LlmUrl: settingsForm.llm_url.value.trim(),
                         LlmApiKey: settingsForm.llm_api_key.value.trim(),
                         LlmModel: settingsForm.llm_model.value.trim(),
+                        LlmTemperature: settingsForm.llm_temperature.value,
                         SensitivityFactor: settingsForm.sensitivity_factor.value.trim(),
                         MaxWorkers: settingsForm.max_workers.value,
                         MaxRetries: settingsForm.max_retries.value,
                         RetryDelay: settingsForm.retry_delay.value,
+                        RequestTimeout: settingsForm.request_timeout.value,
                         OutputDirectory: settingsForm.output_directory.value.trim(),
                         SaveMarkdown: settingsForm.save_markdown.checked,
                         RenderMarkdown: settingsForm.render_markdown.checked,

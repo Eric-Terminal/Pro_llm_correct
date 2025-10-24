@@ -1,16 +1,18 @@
 import base64
-from typing import Dict, Any, Tuple, Optional
-import urllib.request
 import json
-from packaging import version
-from config_manager import ConfigManager
-from markdown_renderer import create_markdown_renderer
-import os
+import logging
 import mimetypes
+import os
 import re
 import time
-import logging
-import subprocess
+import urllib.request
+from typing import Any, Dict, Optional, Tuple
+
+from openai import OpenAI, OpenAIError
+from packaging import version
+
+from config_manager import ConfigManager
+from markdown_renderer import create_markdown_renderer
 
 # 定义默认的LLM Prompt模板。使用`.format()`方法进行后续的动态填充。
 DEFAULT_LLM_PROMPT_TEMPLATE = """# ESSAY TOPIC
@@ -100,13 +102,13 @@ class ApiService:
         self.config = config_manager
         self.ui_queue = ui_queue
         self.markdown_renderer = create_markdown_renderer(config_manager)
+        self.logger = logging.getLogger("essay_corrector.api")
 
     def _log(self, message: str):
         """将日志消息放入UI队列。"""
+        self.logger.info(message)
         if self.ui_queue:
             self.ui_queue.put(("log", message))
-        else:
-            logging.info(message)
 
     def _encode_image_to_base64_url(self, image_path: str) -> str:
         """将本地图片文件编码为Base64数据URL。"""
@@ -122,7 +124,7 @@ class ApiService:
     def _chat_endpoint(self, base_url: Optional[str]) -> str:
         if not base_url:
             raise ValueError("服务地址未配置，请先在设置中填写 API Base URL")
-        return base_url.rstrip('/') + "/chat/completions"
+        return base_url.rstrip("/")
 
     def _usage_from_response(self, response_json: Dict[str, Any]) -> Dict[str, int]:
         usage = response_json.get("usage") or {}
@@ -131,51 +133,15 @@ class ApiService:
             "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
         }
 
-    def _post_json_with_curl(self, endpoint: str, api_key: Optional[str], payload: Dict[str, Any], timeout: float) -> Dict[str, Any]:
-        data_str = json.dumps(payload, ensure_ascii=False)
-        command = [
-            "curl",
-            "-sS",
-            "-X",
-            "POST",
-            endpoint,
-            "-H",
-            "Content-Type: application/json",
-            "--data-binary",
-            "@-",
-            "-w",
-            "\nHTTP_STATUS:%{http_code}",
-            "--max-time",
-            str(max(timeout, 1.0)),
-        ]
+    def _create_openai_client(self, base_url: str, api_key: Optional[str], timeout: float) -> OpenAI:
+        client_kwargs: Dict[str, Any] = {
+            "base_url": base_url.rstrip("/"),
+            "timeout": max(timeout, 1.0),
+            "max_retries": 0,
+        }
         if api_key:
-            command.extend(["-H", f"Authorization: Bearer {api_key}"])
-
-        completed = subprocess.run(command, capture_output=True, text=True, input=data_str)
-        stdout = completed.stdout or ""
-        stderr = completed.stderr.strip()
-
-        status_code = None
-        if "HTTP_STATUS:" in stdout:
-            stdout, status_part = stdout.rsplit("HTTP_STATUS:", 1)
-            try:
-                status_code = int(status_part.strip())
-            except ValueError:
-                status_code = None
-
-        response_text = stdout.strip()
-
-        if completed.returncode != 0 or (status_code and status_code >= 400):
-            error_message = response_text or stderr or f"curl exited with code {completed.returncode}"
-            raise RuntimeError(f"调用失败 (HTTP {status_code}): {error_message}")
-
-        if not response_text:
-            return {}
-
-        try:
-            return json.loads(response_text)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"无法解析 API 返回的 JSON: {response_text[:500]}") from exc
+            client_kwargs["api_key"] = api_key
+        return OpenAI(**client_kwargs)
 
     def _invoke_chat_completion(
         self,
@@ -187,17 +153,31 @@ class ApiService:
         retry_delay: int,
         timeout: float,
     ) -> Dict[str, Any]:
-        endpoint = self._chat_endpoint(base_url)
+        normalized_base_url = self._chat_endpoint(base_url)
+        endpoint = f"{normalized_base_url}/chat/completions"
+        client = self._create_openai_client(normalized_base_url, api_key, timeout)
         last_error: Optional[Exception] = None
         for attempt in range(max_retries):
             try:
-                return self._post_json_with_curl(endpoint, api_key, payload, timeout)
+                model = payload.get("model")
+                self._log(f"{label} 请求: endpoint={endpoint}, model={model}")
+                response = client.chat.completions.create(**payload)
+                response_json = response.model_dump()
+                trimmed = json.dumps(response_json, ensure_ascii=False)
+                if len(trimmed) > 800:
+                    trimmed = trimmed[:797] + "..."
+                self._log(f"{label} 响应: {trimmed}")
+                return response_json
+            except OpenAIError as exc:
+                last_error = exc
+                error_message = str(exc)
             except Exception as exc:  # pylint: disable=broad-except
                 last_error = exc
-                if attempt == max_retries - 1:
-                    raise
-                self._log(f"{label} 调用失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})，错误: {exc}")
-                time.sleep(retry_delay)
+                error_message = str(exc)
+            if attempt == max_retries - 1:
+                raise last_error
+            self._log(f"{label} 调用失败，{retry_delay}秒后重试... (尝试 {attempt + 1}/{max_retries})，错误: {error_message}")
+            time.sleep(retry_delay)
         if last_error:
             raise last_error
         raise RuntimeError(f"{label} 调用失败：未知错误")
@@ -221,6 +201,12 @@ class ApiService:
             request_timeout = float(self.config.get("RequestTimeout", 120))
         except (ValueError, TypeError):
             request_timeout = 120.0
+
+        try:
+            vlm_temperature = float(self.config.get("VlmTemperature", 0.0))
+        except (ValueError, TypeError):
+            vlm_temperature = 0.0
+        vlm_temperature = min(max(vlm_temperature, 0.0), 2.0)
 
         base64_image_url = self._encode_image_to_base64_url(file_path)
 
@@ -250,12 +236,12 @@ Strictly adhere to the following format. Do not output anything else.
 </text>"""
         vlm_messages = [{"role": "user", "content": [{"type": "text", "text": vlm_prompt}, {"type": "image_url", "image_url": {"url": base64_image_url}}]}]
         
-        vlm_model = self.config.get("VlmModel", "Pro/THUDM/GLM-4.1V-9B-Thinking")
+        vlm_model = self.config.get("VlmModel", "Qwen/Qwen3-VL-235B-A22B-Instruct")
         vlm_payload = {
             "model": vlm_model,
             "messages": vlm_messages,
             "max_tokens": 4096,
-            "temperature": 1,
+            "temperature": vlm_temperature,
         }
         vlm_response_json = self._invoke_chat_completion(
             "VLM",
@@ -306,12 +292,18 @@ Strictly adhere to the following format. Do not output anything else.
         
         llm_messages = [{"role": "user", "content": final_llm_prompt}]
 
-        llm_model = self.config.get("LlmModel", "moonshotai/Kimi-K2-Instruct")
+        try:
+            llm_temperature = float(self.config.get("LlmTemperature", 0.0))
+        except (ValueError, TypeError):
+            llm_temperature = 0.0
+        llm_temperature = min(max(llm_temperature, 0.0), 2.0)
+
+        llm_model = self.config.get("LlmModel", "Qwen/Qwen3-VL-235B-A22B-Instruct")
         llm_payload = {
             "model": llm_model,
             "messages": llm_messages,
-            "temperature": 1,
-            "max_tokens": 16384,
+            "temperature": llm_temperature,
+            "max_tokens": 4096,
         }
 
         final_report: str

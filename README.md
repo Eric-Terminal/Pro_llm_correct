@@ -1,137 +1,106 @@
 # AI 作文批改助手 ✨
 
-(＾▽＾)ﾉﾞ 欢迎使用 AI 作文批改助手！这是一款专为教育工作者和学生设计的本地 Web 应用，能够像经验丰富的英语老师一样，自动批改手写英文作文图片，并生成专业详细的批改报告。
+> 上传手写英文作文 → 自动识别文本 → 按高考标准打分 → 输出详尽反馈报告，全流程在本地浏览器完成。
 
-## ✨ 核心特色功能
+![Web UI 批改页面](photo/1.png)
+![Web UI 设置页面](photo/2.png)
+![Web UI 关于页面](photo/3.png)
 
-### 🤖 双AI引擎智能处理
-- **视觉语言模型(VLM)**: 专业的手写文字识别(OCR)和书写质量评估，给出精准的卷面分数
-- **大语言模型(LLM)**: 深度内容分析，提供专业的语法纠错和写作建议
-- **智能作文类型识别**: 自动识别应用文(15分制)和读后续写(25分制)两种高考作文类型
+## 全面重构亮点
+- **现代化 Web UI**：基于 Flask 构建的单页应用，所有功能集中在浏览器端完成，配置与状态实时同步。
+- **任务可追溯**：每次批改都会创建独立 run id，原图、Markdown、HTML 报告集中存放，便于回看和分享。
+- **并发调度升级**：多线程线程池 + 独立任务状态机，批量图片互不阻塞，失败文件单独记录。
+- **Prompt / 评分可插拔**：默认内置高考英语评分模板，可在 UI 动态替换；书写敏感度、模型温度均可调整。
+- **安全与透明**：API Key 以设备指纹派生的密钥加密存储，支持一键清除；Token 用量实时累积并在 UI 展示。
+- **自动更新提示**：后台检查 GitHub Releases 获取最新版本信息，可一键触发或关闭。
 
-### ⚙️ 极致灵活配置
-- **服务独立配置**: VLM和LLM支持完全独立的API服务、密钥和模型配置
-- **评分标准可调**: 书写质量"敏感度因子"自由调节，适应不同评分要求
-- **Prompt模板开放**: 核心批改指令完全可自定义，打造个性化批改风格
+## 工作原理概览
+1. **图片接入**：兼容摄像头拍照、扫描件或批量上传，自动清洗文件名防止覆盖。
+2. **VLM 解析**：将图片转为 base64，通过兼容 OpenAI 的视觉模型 OCR + 计算书写分。
+3. **LLM 批改**：根据作文题目、识别文本、书写分构建 Prompt，生成结构化中文反馈。
+4. **报告生成**：按配置保存 Markdown，并可渲染为带主题的 HTML 文件输出。
+5. **状态同步**：Web UI 实时播报进度、日志、Token 消耗。
 
-### 🚀 高效并发处理
-- 多线程并发引擎，支持批量处理任意数量的作文图片
-- 智能任务调度，大幅提升批改效率，节省宝贵时间
-- 实时进度显示和详细日志输出，随时掌握处理状态
+## 快速开始
 
-### 🔒 企业级安全保障
-- 军事级加密算法保护API密钥，防止敏感信息泄露
-- 本地配置文件加密存储，确保账户安全无忧
-- 透明的Token使用统计，方便成本控制
+### 环境准备
+- Python 3.9 及以上
+- macOS / Windows / Linux 均可
+- 任意兼容 OpenAI API 协议的 VLM/LLM 服务（OpenAI、Azure OpenAI、通义、DeepSeek 等）
 
-### 📊 专业输出格式
-- **Markdown源文件**: 完整的批改报告，支持进一步编辑和定制
-- **HTML可视化报告**: 美观易读的网页格式，方便分享和查看
-- **详细错误分析**: 语法错误、表达问题、修改建议一应俱全
-- **精准分数评估**: 专业的评分体系，符合高考评分标准
-
----
-
-##  使用指南
-
-### 快速开始
-1. **下载程序**: 前往 [Releases页面](https://github.com/Eric-Terminal/Pro_llm_correct/releases) 下载最新版本
-2. **启动 Web UI**:
-   - 在终端运行 `python3 main.py`
-   - 程序会从 4567 端口起寻找可用端口，并自动打开浏览器访问 Web 界面
-3. **配置服务**:
-   - 通过顶部导航切换到“服务设置”页，填写 VLM/LLM 的 URL、API Key、模型名称等参数
-   - 可自定义 Prompt 模板、并发数量、重试策略与输出目录
-   - 密钥字段不会回显；若提示“已保存”，留空即可沿用原值，输入新值即可覆盖
-   - 点击“保存设置”即可持久化到本地 `config.json`（密钥自动加密）
-4. **上传批改**:
-   - Web 首页默认停留在“批改作文”页，在表单中输入作文题目或场景说明
-   - 上传需要批改的作文照片（支持多选）
-   - 点击“开始批改”，浏览器会实时显示每个文件的处理状态与日志
-5. **查看报告**:
-   - 所有输出默认保存在 `output_reports/<时间戳>/` 目录
-   - 结果卡片中提供 Markdown/HTML 链接，可直接在浏览器查看或下载
-
-### 输出文件说明
-- 默认保存在 `output_reports/<时间戳>/` 目录
-- `原文件名_report.md`: Markdown 格式详细批改报告
-- `原文件名_report.html`: HTML 可视化批改报告
-- 包含: 作文内容、综合评价、亮点优点、问题建议、分数评估
-
----
-
-## 🛠️ 开发者指南
-
-### 环境搭建
+### 安装依赖
 ```bash
-# 1. 克隆仓库
 git clone https://github.com/Eric-Terminal/Pro_llm_correct.git
 cd Pro_llm_correct
-
-# 2. 创建虚拟环境（推荐）
 python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate  # Windows
-
-# 3. 安装依赖
+source venv/bin/activate        # Windows 使用 venv\Scripts\activate
 pip install -r requirements.txt
-# 需要确保系统已安装 curl（macOS/Linux 默认自带，Windows 可安装 Git Bash 或使用 WSL）
+```
 
-# 4. 运行程序
+### 启动 Web 版
+```bash
 python3 main.py
 ```
+- 应用将尝试从 4567–4667 中选择空闲端口，并自动打开默认浏览器。
+- 首次运行会生成 `config.json`、`output_reports/` 等目录。
 
-### 项目打包
-```bash
-# 打包为独立可执行文件
-pyinstaller --noconsole --onefile main.py
+## 使用流程
+1. 在「批改作文」页填入题目或场景说明。
+2. 上传一张或多张作文图片并提交。
+3. 查看实时处理状态：成功会显示 Markdown / HTML 下载链接，失败会给出详细错误。
+4. 结果保存在 `output_reports/<run_id>/` 中，run id 由时间戳生成，保证唯一。
 
-# 打包好的程序在 dist/ 目录
 ```
+output_reports/
+└── <run_id>/               # 例如 20240101-120000
+    ├── essay-1.png         # 原始上传文件
+    ├── essay-1_report.md   # Markdown 报告（若启用 SaveMarkdown）
+    └── essay-1_report.html # HTML 报告（若启用 RenderMarkdown）
+```
+- `OutputDirectory` 可改为绝对路径以迁移到 NAS / 外部硬盘。
+- 若只启用 HTML，程序会在渲染完成后自动删除对应 Markdown 文件。
 
-### 技术架构
-- **前端**: Flask Web 服务 + 原生 HTML/CSS（玻璃拟态苹果风界面）
-- **核心**: 双AI引擎架构 (VLM + LLM)
-- **安全**: cryptography 加密存储配置
-- **并发**: threading + concurrent.futures.ThreadPoolExecutor
-- **输出**: Markdown/HTML 报告（内置样式渲染器）
+## 关键配置参考
+| 分类 | 键名 | 说明 |
+| --- | --- | --- |
+| 服务连接 | `VlmUrl` / `VlmModel` / `VlmApiKey`<br>`LlmUrl` / `LlmModel` / `LlmApiKey` | 与 OpenAI SDK 参数保持一致；密钥输入后即被本地加密，输入框留空表示沿用已有值。 |
+| 性能与容错 | `MaxWorkers` / `MaxRetries` / `RetryDelay` / `RequestTimeout` | 控制并发线程数、失败重试次数与间隔、单次请求超时（秒）。 |
+| 评分策略 | `SensitivityFactor` | 对 VLM 输出的书写分进行幂次强化/弱化（默认 1.0）。 |
+|  | `VlmTemperature` / `LlmTemperature` | 约束模型随机性，范围 0–2。 |
+| Prompt 定制 | `LlmPromptTemplate` | 使用 Python `str.format` 语法，支持 `{topic}`、`{wscore}`、`{essay_text}` 占位符，留空回退到内置模板。 |
+| 输出控制 | `OutputDirectory` / `SaveMarkdown` / `RenderMarkdown` | 自定义输出目录及报告格式，布尔选项可在 UI 勾选。 |
+| 版本与统计 | `AutoUpdateCheck` / `UsageVlmInput` 等 | 自动更新开关及历史 Token 统计，展示于 UI「关于」面板。 |
 
----
+配置文件位于仓库根目录 `config.json`，敏感字段均以设备指纹派生密钥加密存储，迁移到新设备后需重新输入 API Key。
 
-## 📝 配置说明
+## Web API（用于自动化集成）
+- `GET /api/config`：读取当前配置、版本信息、Token 统计。
+- `POST /api/config`：提交 JSON 更新配置；支持 `ClearVlmApiKey` / `ClearLlmApiKey` 清除敏感字段。
+- `POST /api/process`：multipart/form-data，包含 `topic` 与 `files[]`，返回 run id。
+- `GET /api/run-status/<run_id>`：轮询任务状态、日志、Token 用量以及生成的文件路径。
+- `GET /outputs/<path>`：访问生成的原图或批改报告。
 
-### 必需配置项
-- `VlmUrl`: VLM服务地址
-- `VlmApiKey`: VLM服务密钥（自动加密）
-- `VlmModel`: VLM模型名称
-- `LlmUrl`: LLM服务地址  
-- `LlmApiKey`: LLM服务密钥（自动加密）
-- `LlmModel`: LLM模型名称
+## 日志与故障排查
+- 控制台会输出端口探测、API 请求摘要和异常信息。
+- Web UI：结果卡片实时显示每个文件的日志及错误信息。
+- 常见问题排查：
+  - **配置缺失**：缺少必填项时，后端会在任务开始前返回具体提示。
+  - **网络或权限错误**：请确认模型名称、Key 是否正确，服务是否支持图像输入，并适当调整 `RequestTimeout` / `RetryDelay`。
 
-### 可选配置项
-- `SensitivityFactor`: 书写评分敏感度因子（默认1.5）
-- `MaxWorkers`: 最大并发数（默认4）
-- `MaxRetries`: 最大重试次数（默认3）
-- `RetryDelay`: 重试延迟秒数（默认5）
-- `RequestTimeout`: 单次 API 请求超时时长（秒，默认120）
-- `SaveMarkdown`: 是否保存Markdown文件（默认True）
-- `RenderMarkdown`: 是否渲染HTML报告（默认True）
+## 开发者指南
+- 核心依赖：Flask（Web 服务）、cryptography（配置加密）、openai SDK（兼容多家服务）、markdown（报告渲染）。
+- 调试技巧：
+  ```bash
+  python3 web_app.py   # 直接运行 Flask 应用
+  python3 main.py      # 启动正式入口，包含日志与端口选择
+  ```
+- 如需打包为单文件可执行程序：
+  ```bash
+  pyinstaller --noconsole --onefile main.py
+  ```
+  生成的可执行文件位于 `dist/`。
 
----
-
-## 📄 开源协议
-
-本项目采用 [MIT License](LICENSE) 开源协议。您可以自由地使用、修改和分发本软件，只需保留原始的版权声明即可。
-
----
-
-## 🤝 贡献与支持
-
-如果您在使用过程中遇到问题或有改进建议，欢迎：
-- 提交 [Issue](https://github.com/Eric-Terminal/Pro_llm_correct/issues)
-- 发起 [Pull Request](https://github.com/Eric-Terminal/Pro_llm_correct/pulls)
-- 给项目点个 ⭐ Star 支持一下！
-
----
-
-*由 Eric-Terminal 精心开发。希望这个工具能够帮助更多的教育工作者和学生！(｡･ω･｡)ﾉ♡*
+## 贡献与许可
+- 欢迎通过 Issue / Pull Request 分享想法与改进。
+- 如果这个项目对你有帮助，别忘了点个 ⭐️。
+- 本项目遵循 [MIT License](LICENSE)。

@@ -1,9 +1,11 @@
+import logging
 import os
 import socket
 import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 
 from config_manager import ConfigManager
 from web_app import create_app
@@ -50,14 +52,43 @@ def open_browser_later(url: str, delay: float = 1.0) -> None:
     threading.Thread(target=_opener, daemon=True).start()
 
 
+def configure_logging(base_path: Path) -> None:
+    """Configure application logging."""
+    handlers = []
+    formatter = logging.Formatter(
+        "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    handlers.append(console_handler)
+
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.setLevel(logging.INFO)
+    for handler in handlers:
+        root.addHandler(handler)
+
+    werkzeug_logger = logging.getLogger("werkzeug")
+    werkzeug_logger.handlers.clear()
+    werkzeug_logger.setLevel(logging.WARNING)
+    werkzeug_logger.propagate = False
+
+
 if __name__ == "__main__":
     config_path = get_config_path()
+    runtime_dir = Path(config_path).resolve().parent
+    configure_logging(runtime_dir)
+    logger = logging.getLogger("essay_corrector.main")
+    logger.info("使用配置文件: %s", config_path)
+
     config_manager = ConfigManager(config_path)
     app = create_app(config_manager)
 
     port = find_available_port()
     url = f"http://127.0.0.1:{port}/"
-    print(f"🚀 Web UI 已启动，访问: {url}")
+    logger.info("🚀 Web UI 已启动，访问: %s", url)
     open_browser_later(url)
 
     app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
